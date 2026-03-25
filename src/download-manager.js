@@ -167,6 +167,8 @@ class DownloadManager {
         '--newline',
         '--progress',
         '--no-color',
+        '--socket-timeout', '10',
+        '--extractor-args', 'youtube:player_client=android',
       ], { env: { ...process.env } });
 
       let totalSize = 0;
