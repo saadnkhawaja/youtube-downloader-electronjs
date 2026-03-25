@@ -89,10 +89,4 @@ ipcMain.handle('set-preferences', async (event, prefs) => storage.setPreferences
 
 ipcMain.handle('download-video', async (event, url, options) => downloadManager.download(url, options));
 
-ipcMain.handle('get-video-info', async (event, url) => {
-  const info = await downloadManager.getVideoInfo(url);
-  // Fire-and-forget: start yt-dlp extraction in background so download()
-  // can skip it via --load-info-json and start instantly
-  downloadManager.preExtract(url);
-  return info;
-});
+ipcMain.handle('get-video-info', async (event, url) => downloadManager.getVideoInfo(url));

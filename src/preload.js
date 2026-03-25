@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadVideo:     (url, opts)  => ipcRenderer.invoke('download-video', url, opts),
   getVideoInfo:      (url)        => ipcRenderer.invoke('get-video-info', url),
   onDownloadProgress:(cb)         => ipcRenderer.on('download-progress', (_, data) => cb(data)),
+  onDownloadStatus: (cb)         => ipcRenderer.on('download-status', (_, status) => cb(status)),
   onYtdlpLog:       (cb)         => ipcRenderer.on('ytdlp-log', (_, line) => cb(line)),
   readClipboard:     ()           => {
     try { return navigator.clipboard.readText(); } catch { return Promise.resolve(''); }

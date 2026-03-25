@@ -22,6 +22,7 @@ class SnapyYT {
     this.loadGallery();
 
     window.electronAPI.onDownloadProgress((data) => this.handleProgress(data));
+    window.electronAPI.onDownloadStatus((status) => this.handleStatus(status));
     this.outputDir = '';
   }
 
@@ -162,6 +163,12 @@ class SnapyYT {
     btn.lastChild.textContent = 'Fetching…';
     btn.disabled = true;
 
+    document.getElementById('progressCard').classList.remove('hidden');
+    document.getElementById('progressTitle').textContent   = 'Fetching video information…';
+    document.getElementById('progressPercent').textContent = '';
+    document.getElementById('progressBar').style.width     = '0%';
+    document.getElementById('progressMeta').textContent    = '';
+
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Request timed out. Check your connection and try again.')), 12000)
     );
@@ -170,8 +177,10 @@ class SnapyYT {
       const info = await Promise.race([window.electronAPI.getVideoInfo(url), timeout]);
       this.currentUrl  = url;
       this.currentInfo = info;
+      document.getElementById('progressCard').classList.add('hidden');
       this.showVideoCard(info);
     } catch (err) {
+      document.getElementById('progressCard').classList.add('hidden');
       this.toast(err.message || 'Failed to fetch video info.', 'error');
     } finally {
       btn.lastChild.textContent = 'Fetch';
@@ -196,7 +205,7 @@ class SnapyYT {
 
     document.getElementById('videoCard').classList.add('hidden');
     document.getElementById('progressCard').classList.remove('hidden');
-    document.getElementById('progressTitle').textContent   = 'Downloading…';
+    document.getElementById('progressTitle').textContent   = 'Starting download…';
     document.getElementById('progressPercent').textContent = '0%';
     document.getElementById('progressBar').style.width     = '0%';
     document.getElementById('progressMeta').textContent    = '';
@@ -260,6 +269,12 @@ class SnapyYT {
 
     const active = this.activeDownloads[this.activeDownloads.length - 1];
     if (active) { active.percent = pct; this.renderDownloadsList(); }
+  }
+
+  handleStatus(status) {
+    if (!status) return;
+    const el = document.getElementById('progressTitle');
+    if (el) el.textContent = status;
   }
 
   renderDownloadsList() {
