@@ -1,0 +1,35 @@
+{
+  "name": "snapy-yt",
+  "version": "1.0.0",
+  "description": "Modern YouTube downloader with sleek design and high-velocity downloads",
+  "main": "src/main.js",
+  "homepage": "https://github.com/saadnkhawaja/snapy-yt",
+  "author": "Saad Khawaja",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.snapy.yt",
+    "productName": "snapy-yt",
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "assets"
+    }
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12"
+  }
+}

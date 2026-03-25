@@ -134,3 +134,13 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# snapy-yt specific
+.snapy-config.json
+.videos.json
+out/
+release/
+Documents/snapy-yt/
+*.mkv
+*.mp4
+.DS_Store
