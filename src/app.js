@@ -21,6 +21,7 @@ class SnapyYT {
     this.loadGallery();
 
     window.electronAPI.onDownloadProgress((data) => this.handleProgress(data));
+    this.outputDir = '';
   }
 
   /* ── TITLEBAR ─────────────────────────────── */
@@ -113,7 +114,7 @@ class SnapyYT {
 
     document.getElementById('folderChipBtn').addEventListener('click', async () => {
       const newPath = await window.electronAPI.openFolder();
-      if (newPath) this.setOutputPathLabel(newPath);
+      if (newPath) { this.outputDir = newPath; this.setOutputPathLabel(newPath); }
     });
 
     document.getElementById('clearCompletedBtn').addEventListener('click', () => {
@@ -141,6 +142,7 @@ class SnapyYT {
   async loadOutputPath() {
     try {
       const p = await window.electronAPI.getOutputPath();
+      this.outputDir = p;
       this.setOutputPathLabel(p);
     } catch {}
   }
@@ -208,9 +210,10 @@ class SnapyYT {
         format:  this.selectedFormat,
       });
 
-      dlItem.status  = 'completed';
-      dlItem.percent = 100;
-      dlItem.size    = result.size;
+      dlItem.status   = 'completed';
+      dlItem.percent  = 100;
+      dlItem.size     = result.size;
+      dlItem.filename = result.filename;
       this.completedDownloads.push(dlItem);
       this.activeDownloads = this.activeDownloads.filter((d) => d !== dlItem);
 
@@ -243,10 +246,14 @@ class SnapyYT {
     const pct = data.percent || 0;
     document.getElementById('progressBar').style.width     = `${pct}%`;
     document.getElementById('progressPercent').textContent = `${pct}%`;
+
+    const parts = [];
     if (data.totalSize && data.currentSize) {
-      document.getElementById('progressMeta').textContent =
-        `${this.fmtSize(data.currentSize)} of ${this.fmtSize(data.totalSize)}`;
+      parts.push(`${this.fmtSize(data.currentSize)} of ${this.fmtSize(data.totalSize)}`);
     }
+    if (data.speed) parts.push(data.speed);
+    document.getElementById('progressMeta').textContent = parts.join('  ·  ');
+
     const active = this.activeDownloads[this.activeDownloads.length - 1];
     if (active) { active.percent = pct; this.renderDownloadsList(); }
   }
@@ -272,11 +279,25 @@ class SnapyYT {
         ? `<img src="${dl.thumb}" class="dl-thumb" alt="">`
         : `<div class="dl-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
 
-      const statusHtml = dl.status === 'completed'
-        ? `<span class="dl-status completed">COMPLETED · ${this.fmtSize(dl.size || 0)}</span>`
-        : dl.status === 'failed'
+      const isCompleted = dl.status === 'completed';
+      const isFailed    = dl.status === 'failed';
+
+      const statusHtml = isCompleted
+        ? `<span class="dl-status completed">${this.fmtSize(dl.size || 0)}</span>`
+        : isFailed
         ? `<span class="dl-status" style="color:var(--red)">FAILED</span>`
         : `<span class="dl-status">${dl.percent}%</span>`;
+
+      const actionsHtml = isCompleted
+        ? `<div class="dl-actions">
+            <button class="dl-action-btn dl-open-folder" title="Show in Finder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            </button>
+            <button class="dl-action-btn dl-open-file" title="Open File">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
+          </div>`
+        : '';
 
       item.innerHTML = `
         ${thumbHtml}
@@ -285,7 +306,18 @@ class SnapyYT {
           <div class="dl-track"><div class="dl-track-fill" style="width:${dl.percent}%"></div></div>
         </div>
         ${statusHtml}
+        ${actionsHtml}
       `;
+
+      if (isCompleted && dl.filename) {
+        item.querySelector('.dl-open-folder')?.addEventListener('click', () => {
+          window.electronAPI.openOutputFolder();
+        });
+        item.querySelector('.dl-open-file')?.addEventListener('click', () => {
+          window.electronAPI.openFile(dl.filename);
+        });
+      }
+
       list.appendChild(item);
     });
   }

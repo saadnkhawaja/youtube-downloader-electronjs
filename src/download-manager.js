@@ -5,7 +5,7 @@ const https = require('https');
 
 const BINARY = path.join(__dirname, '..', 'bin', 'yt-dlp');
 
-const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)/;
+const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)(?:\s+at\s+([\d.]+)([KMGT]iB)\/s)?/;
 
 function extractVideoId(url) {
   const m = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
@@ -33,13 +33,15 @@ function parseSize(num, unit) {
 }
 
 function buildFormat(quality) {
+  // Prefer pre-merged mp4 (no ffmpeg needed), then fall back to merge, then anything
   if (!quality || quality === 'best') {
-    return 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+    return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
   }
   const h = parseInt(quality, 10);
   return (
-    `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]` +
-    `/best[height<=${h}][ext=mp4]/best[height<=${h}]/best[ext=mp4]/best`
+    `best[height<=${h}][ext=mp4]` +
+    `/bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]` +
+    `/best[height<=${h}]/best`
   );
 }
 
@@ -138,13 +140,16 @@ class DownloadManager {
     const info      = await this.getVideoInfo(url);
     const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
     const ext       = options.format === 'webm' ? 'webm' : 'mp4';
+    const outDir    = this.storage.getOutputPath();
+
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
     let filename = `${safeTitle}.${ext}`;
-    let filepath = path.join(this.outputPath, filename);
+    let filepath = path.join(outDir, filename);
     let counter  = 1;
     while (fs.existsSync(filepath)) {
       filename = `${safeTitle} (${counter}).${ext}`;
-      filepath = path.join(this.outputPath, filename);
+      filepath = path.join(outDir, filename);
       counter++;
     }
 
@@ -159,22 +164,32 @@ class DownloadManager {
         '--no-playlist',
         '--no-check-certificate',
         '--newline',
+        '--progress',
+        '--no-color',
       ], { env: { ...process.env } });
 
       let totalSize = 0;
       let stderr    = '';
 
       const handleChunk = (chunk) => {
-        const lines = chunk.toString().split('\n');
+        // yt-dlp uses \r for in-place updates; --newline switches to \n but split both
+        const lines = chunk.toString().split(/\r?\n|\r/);
         for (const line of lines) {
           const m = PROGRESS_RE.exec(line);
           if (!m) continue;
-          const percent = Math.round(parseFloat(m[1]));
-          totalSize = parseSize(m[2], m[3]);
+          const percent     = Math.round(parseFloat(m[1]));
+          totalSize         = parseSize(m[2], m[3]);
+          const currentSize = Math.round((percent / 100) * totalSize);
+          const speedVal    = m[4] ? parseFloat(m[4]) : 0;
+          const speedUnit   = m[5] ? m[5] : '';
+          const speed       = speedVal && speedUnit
+            ? `${speedVal} ${speedUnit}/s`
+            : '';
           this.mainWindow.webContents.send('download-progress', {
             percent,
             totalSize,
-            currentSize: Math.round((percent / 100) * totalSize),
+            currentSize,
+            speed,
           });
         }
       };
