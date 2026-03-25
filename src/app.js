@@ -156,12 +156,15 @@ class SnapyYT {
     if (!url) { this.toast('Paste a YouTube URL first.', 'error'); return; }
 
     const btn = document.getElementById('fetchBtn');
-    btn.querySelector('svg + *') && null;
     btn.lastChild.textContent = 'Fetching…';
     btn.disabled = true;
 
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timed out. Check your connection and try again.')), 12000)
+    );
+
     try {
-      const info = await window.electronAPI.getVideoInfo(url);
+      const info = await Promise.race([window.electronAPI.getVideoInfo(url), timeout]);
       this.currentUrl = url;
       this.showVideoCard(info);
     } catch (err) {
