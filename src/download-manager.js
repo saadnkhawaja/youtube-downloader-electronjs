@@ -137,7 +137,8 @@ class DownloadManager {
   }
 
   async download(url, options) {
-    const info      = await this.getVideoInfo(url);
+    // Use pre-fetched info from the Fetch step to avoid a second 20-25s lookup
+    const info = options.videoInfo || await this.getVideoInfo(url);
     const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
     const ext       = options.format === 'webm' ? 'webm' : 'mp4';
     const outDir    = this.storage.getOutputPath();

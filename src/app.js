@@ -4,6 +4,7 @@ const YT_REGEX   = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?.*v=|shorts\/)
 class SnapyYT {
   constructor() {
     this.currentUrl      = '';
+    this.currentInfo     = null;
     this.selectedQuality = 'best';
     this.selectedFormat  = 'mp4';
     this.activeDownloads = [];
@@ -167,7 +168,8 @@ class SnapyYT {
 
     try {
       const info = await Promise.race([window.electronAPI.getVideoInfo(url), timeout]);
-      this.currentUrl = url;
+      this.currentUrl  = url;
+      this.currentInfo = info;
       this.showVideoCard(info);
     } catch (err) {
       this.toast(err.message || 'Failed to fetch video info.', 'error');
@@ -206,8 +208,9 @@ class SnapyYT {
 
     try {
       const result = await window.electronAPI.downloadVideo(this.currentUrl, {
-        quality: this.selectedQuality,
-        format:  this.selectedFormat,
+        quality:   this.selectedQuality,
+        format:    this.selectedFormat,
+        videoInfo: this.currentInfo,
       });
 
       dlItem.status   = 'completed';
@@ -228,7 +231,8 @@ class SnapyYT {
       setTimeout(() => {
         document.getElementById('progressCard').classList.add('hidden');
         document.getElementById('urlInput').value = '';
-        this.currentUrl = '';
+        this.currentUrl  = '';
+        this.currentInfo = null;
         this.loadGallery();
       }, 2400);
     } catch (err) {
