@@ -78,22 +78,26 @@ class DownloadManager {
   }
 
   async getVideoInfo(url) {
-    const json = await run([
+    const SEP = '\x1F'; // ASCII unit separator — safe delimiter
+
+    const output = await run([
       url,
-      '--dump-single-json',
+      '--print', `%(id)s${SEP}%(title)s${SEP}%(uploader,channel,uploader_id)s${SEP}%(duration)s${SEP}%(thumbnail)s`,
       '--no-warnings',
-      '--no-call-home',
+      '--no-playlist',
       '--no-check-certificate',
+      '--socket-timeout', '10',
+      '--extractor-args', 'youtube:player_client=android',
     ], (l) => this._log(l));
 
-    const info = JSON.parse(json);
+    const [id, title, author, durationStr, thumbnail] = output.trim().split(SEP);
 
     return {
-      id:        info.id,
-      title:     info.title,
-      author:    info.uploader || info.channel || info.uploader_id || 'Unknown',
-      duration:  info.duration,
-      thumbnail: info.thumbnail,
+      id,
+      title,
+      author:    author || 'Unknown',
+      duration:  parseFloat(durationStr) || 0,
+      thumbnail,
     };
   }
 
@@ -119,7 +123,7 @@ class DownloadManager {
         '--output', filepath,
         '--format', format,
         '--no-warnings',
-        '--no-call-home',
+        '--no-playlist',
         '--no-check-certificate',
         '--newline',
       ], { env: { ...process.env } });
