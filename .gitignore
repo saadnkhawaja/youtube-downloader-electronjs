@@ -138,6 +138,9 @@ dist
 # yt-dlp debug files
 *-player-script.js
 
+# yt-dlp native binary (downloaded separately per platform)
+bin/
+
 # snapy-yt specific
 .snapy-config.json
 .videos.json

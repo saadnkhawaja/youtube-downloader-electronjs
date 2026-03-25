@@ -1,6 +1,16 @@
-const youtubedl = require('youtube-dl-exec');
-const fs = require('fs');
+const { spawn } = require('child_process');
+const fs   = require('fs');
 const path = require('path');
+
+const BINARY = path.join(__dirname, '..', 'bin', 'yt-dlp');
+
+const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)/;
+
+function parseSize(num, unit) {
+  const n = parseFloat(num);
+  const map = { KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 };
+  return Math.round(n * (map[unit] || 1));
+}
 
 function buildFormat(quality) {
   if (!quality || quality === 'best') {
@@ -9,23 +19,36 @@ function buildFormat(quality) {
   const h = parseInt(quality, 10);
   return (
     `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]` +
-    `/best[height<=${h}][ext=mp4]` +
-    `/best[height<=${h}]` +
-    `/best[ext=mp4]/best`
+    `/best[height<=${h}][ext=mp4]/best[height<=${h}]/best[ext=mp4]/best`
   );
 }
 
-const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)/;
+function run(args, onData) {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(BINARY, args, { env: { ...process.env } });
 
-function parseSize(num, unit) {
-  const n = parseFloat(num);
-  switch (unit) {
-    case 'KiB': return Math.round(n * 1024);
-    case 'MiB': return Math.round(n * 1024 * 1024);
-    case 'GiB': return Math.round(n * 1024 * 1024 * 1024);
-    case 'TiB': return Math.round(n * 1024 * 1024 * 1024 * 1024);
-    default:    return Math.round(n);
-  }
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (chunk) => {
+      const s = chunk.toString();
+      stdout += s;
+      if (onData) onData(s);
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      const s = chunk.toString();
+      stderr += s;
+      if (onData) onData(s);
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) return resolve(stdout);
+      reject(new Error(stderr.split('\n').filter(Boolean).pop() || `yt-dlp exited with code ${code}`));
+    });
+
+    proc.on('error', (err) => reject(new Error(`Failed to start yt-dlp: ${err.message}`)));
+  });
 }
 
 class DownloadManager {
@@ -36,13 +59,15 @@ class DownloadManager {
   }
 
   async getVideoInfo(url) {
-    const info = await youtubedl(url, {
-      dumpSingleJson:     true,
-      noWarnings:         true,
-      noCallHome:         true,
-      noCheckCertificate: true,
-      preferFreeFormats:  true,
-    });
+    const json = await run([
+      url,
+      '--dump-single-json',
+      '--no-warnings',
+      '--no-call-home',
+      '--no-check-certificate',
+    ]);
+
+    const info = JSON.parse(json);
 
     return {
       id:        info.id,
@@ -70,36 +95,45 @@ class DownloadManager {
     const format = buildFormat(options.quality);
 
     return new Promise((resolve, reject) => {
-      const subprocess = youtubedl.exec(url, {
-        output:             filepath,
-        format,
-        noWarnings:         true,
-        noCallHome:         true,
-        noCheckCertificate: true,
-      });
+      const proc = spawn(BINARY, [
+        url,
+        '--output', filepath,
+        '--format', format,
+        '--no-warnings',
+        '--no-call-home',
+        '--no-check-certificate',
+        '--newline',
+      ], { env: { ...process.env } });
 
-      let lastPercent = 0;
-      let totalSize   = 0;
+      let totalSize = 0;
+      let stderr    = '';
 
-      const handleLine = (line) => {
-        const m = PROGRESS_RE.exec(line);
-        if (!m) return;
-        lastPercent = Math.round(parseFloat(m[1]));
-        totalSize   = parseSize(m[2], m[3]);
-        this.mainWindow.webContents.send('download-progress', {
-          percent:     lastPercent,
-          totalSize,
-          currentSize: Math.round((lastPercent / 100) * totalSize),
-        });
+      const handleChunk = (chunk) => {
+        const lines = chunk.toString().split('\n');
+        for (const line of lines) {
+          const m = PROGRESS_RE.exec(line);
+          if (!m) continue;
+          const percent = Math.round(parseFloat(m[1]));
+          totalSize = parseSize(m[2], m[3]);
+          this.mainWindow.webContents.send('download-progress', {
+            percent,
+            totalSize,
+            currentSize: Math.round((percent / 100) * totalSize),
+          });
+        }
       };
 
-      subprocess.stdout?.on('data', (d) => String(d).split('\n').forEach(handleLine));
-      subprocess.stderr?.on('data', (d) => String(d).split('\n').forEach(handleLine));
+      proc.stdout.on('data', handleChunk);
+      proc.stderr.on('data', (chunk) => {
+        handleChunk(chunk);
+        stderr += chunk.toString();
+      });
 
-      subprocess.on('close', (code) => {
+      proc.on('close', (code) => {
         if (code !== 0) {
           fs.unlink(filepath, () => {});
-          return reject(new Error('yt-dlp exited with code ' + code));
+          const lastLine = stderr.split('\n').filter(Boolean).pop() || '';
+          return reject(new Error(lastLine || `Download failed (exit ${code})`));
         }
 
         let fileSize = totalSize;
@@ -117,9 +151,9 @@ class DownloadManager {
         resolve({ success: true, filename, filepath, size: fileSize });
       });
 
-      subprocess.on('error', (err) => {
+      proc.on('error', (err) => {
         fs.unlink(filepath, () => {});
-        reject(new Error('Spawn error: ' + err.message));
+        reject(new Error(`Failed to start download: ${err.message}`));
       });
     });
   }
