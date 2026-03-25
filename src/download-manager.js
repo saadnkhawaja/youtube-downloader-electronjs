@@ -1,122 +1,125 @@
-const ytdl = require('@distube/ytdl-core');
+const youtubedl = require('youtube-dl-exec');
 const fs = require('fs');
 const path = require('path');
 
-const QUALITY_MAP = {
-  best:   null,
-  '1080': 1080,
-  '720':  720,
-  '480':  480,
-  '360':  360,
-};
+function buildFormat(quality) {
+  if (!quality || quality === 'best') {
+    return 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+  }
+  const h = parseInt(quality, 10);
+  return (
+    `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]` +
+    `/best[height<=${h}][ext=mp4]` +
+    `/best[height<=${h}]` +
+    `/best[ext=mp4]/best`
+  );
+}
+
+const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)/;
+
+function parseSize(num, unit) {
+  const n = parseFloat(num);
+  switch (unit) {
+    case 'KiB': return Math.round(n * 1024);
+    case 'MiB': return Math.round(n * 1024 * 1024);
+    case 'GiB': return Math.round(n * 1024 * 1024 * 1024);
+    case 'TiB': return Math.round(n * 1024 * 1024 * 1024 * 1024);
+    default:    return Math.round(n);
+  }
+}
 
 class DownloadManager {
   constructor(outputPath, mainWindow, storage) {
     this.outputPath = outputPath;
     this.mainWindow = mainWindow;
-    this.storage = storage;
+    this.storage    = storage;
   }
 
   async getVideoInfo(url) {
-    if (!ytdl.validateURL(url)) {
-      throw new Error('Invalid YouTube URL');
-    }
-
-    const info = await ytdl.getInfo(url);
-    const details = info.videoDetails;
+    const info = await youtubedl(url, {
+      dumpSingleJson:     true,
+      noWarnings:         true,
+      noCallHome:         true,
+      noCheckCertificate: true,
+      preferFreeFormats:  true,
+    });
 
     return {
-      id: details.videoId,
-      title: details.title,
-      author: details.author.name,
-      duration: parseInt(details.lengthSeconds, 10),
-      thumbnail: details.thumbnails[details.thumbnails.length - 1].url,
+      id:        info.id,
+      title:     info.title,
+      author:    info.uploader || info.channel || info.uploader_id || 'Unknown',
+      duration:  info.duration,
+      thumbnail: info.thumbnail,
     };
   }
 
-  _pickFormat(formats, targetHeight) {
-    const combined = formats.filter((f) => f.hasVideo && f.hasAudio);
-
-    if (combined.length === 0) {
-      throw new Error('No playable formats found for this video.');
-    }
-
-    const sorted = [...combined].sort((a, b) => (b.height || 0) - (a.height || 0));
-
-    if (!targetHeight) return sorted[0];
-
-    const exact = sorted.find((f) => f.height === targetHeight);
-    if (exact) return exact;
-
-    const below = sorted.find((f) => (f.height || 0) <= targetHeight);
-    return below || sorted[sorted.length - 1];
-  }
-
   async download(url, options) {
-    if (!ytdl.validateURL(url)) {
-      throw new Error('Invalid YouTube URL');
-    }
+    const info      = await this.getVideoInfo(url);
+    const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
+    const ext       = options.format === 'webm' ? 'webm' : 'mp4';
 
-    const info = await ytdl.getInfo(url);
-    const details = info.videoDetails;
-    const safeTitle = details.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
-
-    const ext = options.format === 'webm' ? 'webm' : 'mp4';
     let filename = `${safeTitle}.${ext}`;
     let filepath = path.join(this.outputPath, filename);
-
-    let counter = 1;
+    let counter  = 1;
     while (fs.existsSync(filepath)) {
       filename = `${safeTitle} (${counter}).${ext}`;
       filepath = path.join(this.outputPath, filename);
       counter++;
     }
 
-    const targetHeight = QUALITY_MAP[options.quality] ?? null;
-    const chosenFormat = this._pickFormat(info.formats, targetHeight);
+    const format = buildFormat(options.quality);
 
     return new Promise((resolve, reject) => {
-      const stream = ytdl.downloadFromInfo(info, { format: chosenFormat });
-      const file = fs.createWriteStream(filepath);
-
-      const totalSize = parseInt(chosenFormat.contentLength, 10) || 0;
-      let downloaded = 0;
-
-      stream.on('data', (chunk) => {
-        downloaded += chunk.length;
-        const percent = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : 0;
-        this.mainWindow.webContents.send('download-progress', {
-          percent,
-          totalSize,
-          currentSize: downloaded,
-        });
+      const subprocess = youtubedl.exec(url, {
+        output:             filepath,
+        format,
+        noWarnings:         true,
+        noCallHome:         true,
+        noCheckCertificate: true,
       });
 
-      stream.pipe(file);
+      let lastPercent = 0;
+      let totalSize   = 0;
 
-      file.on('finish', () => {
+      const handleLine = (line) => {
+        const m = PROGRESS_RE.exec(line);
+        if (!m) return;
+        lastPercent = Math.round(parseFloat(m[1]));
+        totalSize   = parseSize(m[2], m[3]);
+        this.mainWindow.webContents.send('download-progress', {
+          percent:     lastPercent,
+          totalSize,
+          currentSize: Math.round((lastPercent / 100) * totalSize),
+        });
+      };
+
+      subprocess.stdout?.on('data', (d) => String(d).split('\n').forEach(handleLine));
+      subprocess.stderr?.on('data', (d) => String(d).split('\n').forEach(handleLine));
+
+      subprocess.on('close', (code) => {
+        if (code !== 0) {
+          fs.unlink(filepath, () => {});
+          return reject(new Error('yt-dlp exited with code ' + code));
+        }
+
+        let fileSize = totalSize;
+        try { fileSize = fs.statSync(filepath).size; } catch {}
+
         this.storage.addVideo({
           filename,
-          title: details.title,
-          duration: parseInt(details.lengthSeconds, 10),
-          size: downloaded,
-          thumbnail: details.thumbnails[details.thumbnails.length - 1].url,
+          title:     info.title,
+          duration:  info.duration,
+          size:      fileSize,
+          thumbnail: info.thumbnail,
           dateAdded: new Date().toISOString(),
         });
 
-        resolve({ success: true, filename, filepath, size: downloaded });
+        resolve({ success: true, filename, filepath, size: fileSize });
       });
 
-      stream.on('error', (err) => {
-        file.destroy();
+      subprocess.on('error', (err) => {
         fs.unlink(filepath, () => {});
-        reject(new Error(`Download failed: ${err.message}`));
-      });
-
-      file.on('error', (err) => {
-        stream.destroy();
-        fs.unlink(filepath, () => {});
-        reject(new Error(`Write failed: ${err.message}`));
+        reject(new Error('Spawn error: ' + err.message));
       });
     });
   }

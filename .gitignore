@@ -135,6 +135,9 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
+# yt-dlp debug files
+*-player-script.js
+
 # snapy-yt specific
 .snapy-config.json
 .videos.json
