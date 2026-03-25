@@ -36,9 +36,8 @@ app.on('ready', () => {
   if (!fs.existsSync(docsPath)) fs.mkdirSync(docsPath, { recursive: true });
 
   storage = new Storage(docsPath);
-  downloadManager = new DownloadManager(docsPath, mainWindow, storage);
-
   createWindow();
+  downloadManager = new DownloadManager(docsPath, mainWindow, storage);
 });
 
 app.on('window-all-closed', () => {
