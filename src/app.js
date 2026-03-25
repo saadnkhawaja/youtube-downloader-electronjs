@@ -1,15 +1,20 @@
+const GITHUB_URL = 'https://github.com/saadnkhawaja';
+const YT_REGEX   = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?.*v=|shorts\/)|youtu\.be\/).+/i;
+
 class SnapyYT {
   constructor() {
-    this.currentUrl   = '';
-    this.selectedQuality = '137';
+    this.currentUrl      = '';
+    this.selectedQuality = 'best';
     this.selectedFormat  = 'mp4';
     this.activeDownloads = [];
     this.completedDownloads = [];
 
+    this.bindTitlebar();
     this.bindNav();
     this.bindDownloader();
     this.bindGallery();
     this.bindSettings();
+    this.bindFab();
     this.initTheme();
     this.loadOutputPath();
     this.loadSettings();
@@ -18,7 +23,18 @@ class SnapyYT {
     window.electronAPI.onDownloadProgress((data) => this.handleProgress(data));
   }
 
-  /* ── NAV ──────────────────────────────────── */
+  /* ── TITLEBAR ─────────────────────────────── */
+
+  bindTitlebar() {
+    document.getElementById('btnMinimize').addEventListener('click', () => {
+      window.electronAPI.windowMinimize();
+    });
+    document.getElementById('btnClose').addEventListener('click', () => {
+      window.electronAPI.windowClose();
+    });
+  }
+
+  /* ── NAVIGATION ───────────────────────────── */
 
   bindNav() {
     document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -27,27 +43,20 @@ class SnapyYT {
   }
 
   navigate(page) {
-    document.querySelectorAll('.page').forEach((p) => {
-      p.classList.remove('active');
-      p.style.display = '';
-    });
+    document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach((b) => b.classList.remove('active'));
-
-    const target = document.getElementById(page);
-    target.classList.add('active');
+    document.getElementById(page).classList.add('active');
     document.querySelector(`[data-page="${page}"]`).classList.add('active');
-
     if (page === 'gallery') this.loadGallery();
   }
 
   /* ── THEME ────────────────────────────────── */
 
   initTheme() {
-    const saved = localStorage.getItem('theme') || 'light';
-    this.applyTheme(saved);
+    this.applyTheme(localStorage.getItem('theme') || 'light');
     document.getElementById('themeToggle').addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme') || 'light';
-      this.applyTheme(current === 'dark' ? 'light' : 'dark');
+      const curr = document.documentElement.getAttribute('data-theme') || 'light';
+      this.applyTheme(curr === 'dark' ? 'light' : 'dark');
     });
   }
 
@@ -62,9 +71,39 @@ class SnapyYT {
     localStorage.setItem('theme', theme);
   }
 
+  /* ── FAB ──────────────────────────────────── */
+
+  bindFab() {
+    document.getElementById('fabBtn').addEventListener('click', async () => {
+      this.navigate('downloader');
+      try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (YT_REGEX.test(text)) {
+          const input = document.getElementById('urlInput');
+          input.value = text;
+          input.focus();
+          this.toast('YouTube URL pasted from clipboard!', 'success');
+        }
+      } catch {
+        document.getElementById('urlInput').focus();
+      }
+    });
+  }
+
+  /* ── GITHUB LINKS ─────────────────────────── */
+
+  bindGithubLinks() {
+    ['githubLink', 'githubLink2'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('click', () => window.electronAPI.openExternal(GITHUB_URL));
+    });
+  }
+
   /* ── DOWNLOADER ───────────────────────────── */
 
   bindDownloader() {
+    this.bindGithubLinks();
+
     document.getElementById('fetchBtn').addEventListener('click', () => this.fetchInfo());
     document.getElementById('urlInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.fetchInfo();
@@ -72,8 +111,14 @@ class SnapyYT {
 
     document.getElementById('downloadBtn').addEventListener('click', () => this.startDownload());
 
-    document.getElementById('openOutputBtn').addEventListener('click', async () => {
-      await window.electronAPI.openOutputFolder();
+    document.getElementById('folderChipBtn').addEventListener('click', async () => {
+      const newPath = await window.electronAPI.openFolder();
+      if (newPath) this.setOutputPathLabel(newPath);
+    });
+
+    document.getElementById('clearCompletedBtn').addEventListener('click', () => {
+      this.completedDownloads = [];
+      this.renderDownloadsList();
     });
 
     document.querySelectorAll('#qualityPills .pill').forEach((btn) => {
@@ -91,19 +136,19 @@ class SnapyYT {
         this.selectedFormat = btn.dataset.format;
       });
     });
-
-    document.getElementById('clearCompletedBtn').addEventListener('click', () => {
-      this.completedDownloads = [];
-      this.renderDownloadsList();
-    });
   }
 
   async loadOutputPath() {
     try {
       const p = await window.electronAPI.getOutputPath();
-      const label = p.replace(/^.*[/\\]/, '').replace(/^.*[/\\]([^/\\]+[/\\][^/\\]+)$/, '$1') || p;
-      document.getElementById('outputPathLabel').textContent = label.length > 28 ? '...' + label.slice(-26) : label;
+      this.setOutputPathLabel(p);
     } catch {}
+  }
+
+  setOutputPathLabel(p) {
+    const parts   = p.replace(/\\/g, '/').split('/').filter(Boolean);
+    const display = parts.length >= 2 ? parts.slice(-2).join('/') : p;
+    document.getElementById('outputPathLabel').textContent = display;
   }
 
   async fetchInfo() {
@@ -111,7 +156,8 @@ class SnapyYT {
     if (!url) { this.toast('Paste a YouTube URL first.', 'error'); return; }
 
     const btn = document.getElementById('fetchBtn');
-    btn.textContent = 'Fetching...';
+    btn.querySelector('svg + *') && null;
+    btn.lastChild.textContent = 'Fetching…';
     btn.disabled = true;
 
     try {
@@ -121,16 +167,16 @@ class SnapyYT {
     } catch (err) {
       this.toast(err.message || 'Failed to fetch video info.', 'error');
     } finally {
-      btn.textContent = 'Fetch';
+      btn.lastChild.textContent = 'Fetch';
       btn.disabled = false;
     }
   }
 
   showVideoCard(info) {
-    document.getElementById('videoThumb').src    = info.thumbnail;
+    document.getElementById('videoThumb').src          = info.thumbnail;
     document.getElementById('videoTitle').textContent  = info.title;
     document.getElementById('videoAuthor').textContent = `Channel: ${info.author}`;
-    document.getElementById('videoDuration').textContent = this.fmtDuration(info.duration);
+    document.getElementById('videoDurationBadge').textContent = this.fmtDuration(info.duration);
     document.getElementById('videoCard').classList.remove('hidden');
     document.getElementById('progressCard').classList.add('hidden');
   }
@@ -139,15 +185,17 @@ class SnapyYT {
     if (!this.currentUrl) { this.toast('Fetch a video first.', 'error'); return; }
 
     const title = document.getElementById('videoTitle').textContent;
+    const thumb = document.getElementById('videoThumb').src;
 
     document.getElementById('videoCard').classList.add('hidden');
     document.getElementById('progressCard').classList.remove('hidden');
-    document.getElementById('progressTitle').textContent = 'Downloading...';
+    document.getElementById('progressTitle').textContent   = 'Downloading…';
     document.getElementById('progressPercent').textContent = '0%';
-    document.getElementById('progressBar').style.width = '0%';
-    document.getElementById('progressMeta').textContent = '';
+    document.getElementById('progressBar').style.width     = '0%';
+    document.getElementById('progressMeta').textContent    = '';
+    document.getElementById('downloadBtn').disabled        = true;
 
-    const dlItem = { name: title, percent: 0, status: 'active', thumb: document.getElementById('videoThumb').src };
+    const dlItem = { name: title, percent: 0, status: 'active', thumb };
     this.activeDownloads.push(dlItem);
     this.renderDownloadsList();
 
@@ -163,9 +211,10 @@ class SnapyYT {
       this.completedDownloads.push(dlItem);
       this.activeDownloads = this.activeDownloads.filter((d) => d !== dlItem);
 
-      document.getElementById('progressTitle').textContent  = 'Download Complete!';
+      document.getElementById('progressTitle').textContent   = 'Download Complete!';
       document.getElementById('progressPercent').textContent = '100%';
-      document.getElementById('progressBar').style.width    = '100%';
+      document.getElementById('progressBar').style.width     = '100%';
+      document.getElementById('downloadBtn').disabled        = false;
 
       this.toast('Download complete!', 'success');
       this.renderDownloadsList();
@@ -175,27 +224,26 @@ class SnapyYT {
         document.getElementById('urlInput').value = '';
         this.currentUrl = '';
         this.loadGallery();
-      }, 2200);
+      }, 2400);
     } catch (err) {
       dlItem.status = 'failed';
       this.activeDownloads = this.activeDownloads.filter((d) => d !== dlItem);
       this.renderDownloadsList();
       document.getElementById('progressCard').classList.add('hidden');
       document.getElementById('videoCard').classList.remove('hidden');
+      document.getElementById('downloadBtn').disabled = false;
       this.toast(err.message || 'Download failed.', 'error');
     }
   }
 
   handleProgress(data) {
     const pct = data.percent || 0;
-    document.getElementById('progressBar').style.width    = `${pct}%`;
+    document.getElementById('progressBar').style.width     = `${pct}%`;
     document.getElementById('progressPercent').textContent = `${pct}%`;
-
     if (data.totalSize && data.currentSize) {
       document.getElementById('progressMeta').textContent =
         `${this.fmtSize(data.currentSize)} of ${this.fmtSize(data.totalSize)}`;
     }
-
     const active = this.activeDownloads[this.activeDownloads.length - 1];
     if (active) { active.percent = pct; this.renderDownloadsList(); }
   }
@@ -205,12 +253,12 @@ class SnapyYT {
     const all  = [...this.activeDownloads, ...this.completedDownloads];
     list.innerHTML = '';
 
-    const count = document.getElementById('activeCount');
+    const countEl = document.getElementById('activeCount');
     if (this.activeDownloads.length > 0) {
-      count.textContent = `${this.activeDownloads.length} Active`;
-      count.classList.remove('hidden');
+      countEl.textContent = `${this.activeDownloads.length} Active`;
+      countEl.classList.remove('hidden');
     } else {
-      count.classList.add('hidden');
+      countEl.classList.add('hidden');
     }
 
     all.forEach((dl) => {
@@ -222,8 +270,10 @@ class SnapyYT {
         : `<div class="dl-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
 
       const statusHtml = dl.status === 'completed'
-        ? `<span class="dl-status completed">COMPLETED • ${this.fmtSize(dl.size || 0)}</span>`
-        : `<span class="dl-status">${dl.percent}% • Downloading</span>`;
+        ? `<span class="dl-status completed">COMPLETED · ${this.fmtSize(dl.size || 0)}</span>`
+        : dl.status === 'failed'
+        ? `<span class="dl-status" style="color:var(--red)">FAILED</span>`
+        : `<span class="dl-status">${dl.percent}%</span>`;
 
       item.innerHTML = `
         ${thumbHtml}
@@ -243,11 +293,9 @@ class SnapyYT {
     document.getElementById('gallerySearch').addEventListener('input', (e) => {
       this.filterGallery(e.target.value);
     });
-
     document.getElementById('openGalleryFolderBtn').addEventListener('click', () => {
       window.electronAPI.openOutputFolder();
     });
-
     document.querySelectorAll('.filter-tab').forEach((btn) => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('.filter-tab').forEach((b) => b.classList.remove('active'));
@@ -272,17 +320,15 @@ class SnapyYT {
       empty.classList.remove('hidden');
       return;
     }
-
     empty.classList.add('hidden');
 
     videos.forEach((v) => {
       const tr = document.createElement('tr');
-
       const thumbHtml = v.thumbnail
         ? `<img src="${v.thumbnail}" class="gallery-row-thumb" alt="">`
         : `<div class="gallery-row-thumb-placeholder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
 
-      const ext = v.filename ? v.filename.split('.').pop().toUpperCase() : '';
+      const ext     = v.filename ? v.filename.split('.').pop().toUpperCase() : '';
       const dateStr = v.dateAdded ? this.fmtDate(v.dateAdded) : '—';
 
       tr.innerHTML = `
@@ -310,11 +356,10 @@ class SnapyYT {
     });
   }
 
-  filterGallery(query) {
-    const rows = document.querySelectorAll('#galleryTableBody tr');
-    rows.forEach((row) => {
+  filterGallery(q) {
+    document.querySelectorAll('#galleryTableBody tr').forEach((row) => {
       const name = row.querySelector('.gallery-row-name')?.textContent || '';
-      row.style.display = name.toLowerCase().includes(query.toLowerCase()) ? '' : 'none';
+      row.style.display = name.toLowerCase().includes(q.toLowerCase()) ? '' : 'none';
     });
   }
 
@@ -323,13 +368,15 @@ class SnapyYT {
 
     const menu = document.createElement('div');
     menu.className = 'dropdown-menu';
-    menu.style.top  = `${e.clientY + 4}px`;
-    menu.style.left = `${e.clientX - 120}px`;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    menu.style.top  = `${rect.bottom + 4}px`;
+    menu.style.left = `${rect.right - 150}px`;
 
     menu.innerHTML = `
       <button class="dropdown-item" id="dmOpen">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-        Open
+        Open file
       </button>
       <button class="dropdown-item danger" id="dmDelete">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -364,8 +411,7 @@ class SnapyYT {
       const newPath = await window.electronAPI.openFolder();
       if (newPath) {
         document.getElementById('settingsOutputPath').textContent = newPath;
-        document.getElementById('outputPathLabel').textContent =
-          newPath.length > 28 ? '...' + newPath.slice(-26) : newPath;
+        this.setOutputPathLabel(newPath);
       }
     });
 
@@ -391,6 +437,7 @@ class SnapyYT {
 
       const fmtBtn = document.querySelector(`[data-pref="format"][data-value="${prefs.format}"]`);
       const qBtn   = document.querySelector(`[data-pref="quality"][data-value="${prefs.quality}"]`);
+
       if (fmtBtn) {
         document.querySelectorAll('[data-pref="format"]').forEach((b) => b.classList.remove('active'));
         fmtBtn.classList.add('active');
@@ -401,9 +448,8 @@ class SnapyYT {
       }
 
       document.getElementById('autoUpdateToggle').checked = prefs.autoUpdate !== false;
-
       this.selectedFormat  = prefs.format  || 'mp4';
-      this.selectedQuality = prefs.quality || '137';
+      this.selectedQuality = prefs.quality || 'best';
     } catch {}
   }
 
@@ -411,13 +457,11 @@ class SnapyYT {
     try {
       const fmtActive = document.querySelector('[data-pref="format"].active');
       const qActive   = document.querySelector('[data-pref="quality"].active');
-
       await window.electronAPI.setPreferences({
         format:     fmtActive?.dataset.value  || 'mp4',
-        quality:    qActive?.dataset.value    || '137',
+        quality:    qActive?.dataset.value    || 'best',
         autoUpdate: document.getElementById('autoUpdateToggle').checked,
       });
-
       this.toast('Settings saved!', 'success');
     } catch {
       this.toast('Failed to save settings.', 'error');
@@ -428,9 +472,9 @@ class SnapyYT {
 
   fmtDuration(secs) {
     if (!secs) return '—';
-    const s = parseInt(secs, 10);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
+    const s   = parseInt(secs, 10);
+    const h   = Math.floor(s / 3600);
+    const m   = Math.floor((s % 3600) / 60);
     const sec = s % 60;
     if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
     return `${m}:${String(sec).padStart(2,'0')}`;
@@ -446,8 +490,9 @@ class SnapyYT {
   }
 
   fmtDate(iso) {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return new Date(iso).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+    });
   }
 
   toast(msg, type = 'success') {
@@ -455,7 +500,10 @@ class SnapyYT {
     t.className = `toast ${type}`;
     t.textContent = msg;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3500);
+    setTimeout(() => {
+      t.style.animation = 'slideOutRight 0.28s cubic-bezier(0.4,0,0.2,1) forwards';
+      setTimeout(() => t.remove(), 300);
+    }, 3000);
   }
 }
 

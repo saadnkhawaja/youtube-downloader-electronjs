@@ -11,14 +11,16 @@ let storage;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    width: 1240,
+    height: 820,
+    minWidth: 920,
+    minHeight: 620,
+    frame: false,
+    transparent: false,
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      enableRemoteModule: false,
       nodeIntegration: false,
     },
   });
@@ -32,10 +34,7 @@ const createWindow = () => {
 
 app.on('ready', () => {
   const docsPath = path.join(os.homedir(), 'Documents', 'snapy-yt');
-
-  if (!fs.existsSync(docsPath)) {
-    fs.mkdirSync(docsPath, { recursive: true });
-  }
+  if (!fs.existsSync(docsPath)) fs.mkdirSync(docsPath, { recursive: true });
 
   storage = new Storage(docsPath);
   downloadManager = new DownloadManager(docsPath, mainWindow, storage);
@@ -44,28 +43,26 @@ app.on('ready', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('activate', () => {
-  if (mainWindow === null) {
-    createWindow();
-  }
+  if (!mainWindow) createWindow();
 });
 
-ipcMain.handle('get-videos', async () => {
-  return storage.getVideos();
+ipcMain.on('window-minimize', () => mainWindow.minimize());
+ipcMain.on('window-close',    () => mainWindow.close());
+
+ipcMain.handle('open-external', async (event, url) => {
+  await shell.openExternal(url);
 });
 
-ipcMain.handle('delete-video', async (event, filename) => {
-  return storage.deleteVideo(filename);
-});
+ipcMain.handle('get-videos', async () => storage.getVideos());
+
+ipcMain.handle('delete-video', async (event, filename) => storage.deleteVideo(filename));
 
 ipcMain.handle('open-file', async (event, filename) => {
-  const filepath = path.join(storage.getOutputPath(), filename);
-  await shell.openPath(filepath);
+  await shell.openPath(path.join(storage.getOutputPath(), filename));
 });
 
 ipcMain.handle('open-output-folder', async () => {
@@ -77,33 +74,21 @@ ipcMain.handle('open-folder', async () => {
     properties: ['openDirectory'],
     defaultPath: storage.getOutputPath(),
   });
-
   if (!result.canceled && result.filePaths.length > 0) {
     storage.setOutputPath(result.filePaths[0]);
     return result.filePaths[0];
   }
+  return null;
 });
 
-ipcMain.handle('get-output-path', async () => {
-  return storage.getOutputPath();
-});
+ipcMain.handle('get-output-path', async () => storage.getOutputPath());
 
-ipcMain.handle('set-output-path', async (event, path) => {
-  storage.setOutputPath(path);
-});
+ipcMain.handle('set-output-path', async (event, p) => storage.setOutputPath(p));
 
-ipcMain.handle('get-preferences', async () => {
-  return storage.getPreferences();
-});
+ipcMain.handle('get-preferences', async () => storage.getPreferences());
 
-ipcMain.handle('set-preferences', async (event, prefs) => {
-  storage.setPreferences(prefs);
-});
+ipcMain.handle('set-preferences', async (event, prefs) => storage.setPreferences(prefs));
 
-ipcMain.handle('download-video', async (event, url, options) => {
-  return downloadManager.download(url, options);
-});
+ipcMain.handle('download-video', async (event, url, options) => downloadManager.download(url, options));
 
-ipcMain.handle('get-video-info', async (event, url) => {
-  return downloadManager.getVideoInfo(url);
-});
+ipcMain.handle('get-video-info', async (event, url) => downloadManager.getVideoInfo(url));
