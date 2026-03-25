@@ -1,10 +1,30 @@
 const { spawn } = require('child_process');
-const fs   = require('fs');
-const path = require('path');
+const fs    = require('fs');
+const path  = require('path');
+const https = require('https');
 
 const BINARY = path.join(__dirname, '..', 'bin', 'yt-dlp');
 
 const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)/;
+
+function extractVideoId(url) {
+  const m = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+function httpGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; snapy-yt/1.0)' },
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, data }));
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, () => { req.destroy(); reject(new Error('Request timed out')); });
+  });
+}
 
 function parseSize(num, unit) {
   const n = parseFloat(num);
@@ -78,27 +98,40 @@ class DownloadManager {
   }
 
   async getVideoInfo(url) {
-    const SEP = '\x1F'; // ASCII unit separator — safe delimiter
+    const videoId = extractVideoId(url);
+    if (!videoId) throw new Error('Could not extract video ID from URL');
 
-    const output = await run([
-      url,
-      '--print', `%(id)s${SEP}%(title)s${SEP}%(uploader,channel,uploader_id)s${SEP}%(duration)s${SEP}%(thumbnail)s`,
-      '--no-warnings',
-      '--no-playlist',
-      '--no-check-certificate',
-      '--socket-timeout', '10',
-      '--extractor-args', 'youtube:player_client=android',
-    ], (l) => this._log(l));
+    this._log(`[info] fetching via oEmbed API (video=${videoId})`);
 
-    const [id, title, author, durationStr, thumbnail] = output.trim().split(SEP);
+    const oembedUrl = `https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${videoId}&format=json`;
+    const pageUrl   = `https://www.youtube.com/watch?v=${videoId}`;
 
-    return {
-      id,
-      title,
-      author:    author || 'Unknown',
-      duration:  parseFloat(durationStr) || 0,
-      thumbnail,
-    };
+    const [oembedRes, pageRes] = await Promise.all([
+      httpGet(oembedUrl),
+      httpGet(pageUrl),
+    ]);
+
+    let title     = 'Unknown Title';
+    let author    = 'Unknown';
+    let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+    try {
+      const oembed = JSON.parse(oembedRes.data);
+      title     = oembed.title       || title;
+      author    = oembed.author_name || author;
+      thumbnail = oembed.thumbnail_url || thumbnail;
+    } catch (e) {
+      this._log(`[warn] oEmbed parse failed: ${e.message}`);
+    }
+
+    // Pull duration from the embedded ytInitialPlayerResponse on the page
+    let duration = 0;
+    const durMatch = pageRes.data.match(/"approxDurationMs":"(\d+)"/);
+    if (durMatch) duration = Math.round(parseInt(durMatch[1], 10) / 1000);
+
+    this._log(`[info] title="${title}" author="${author}" duration=${duration}s`);
+
+    return { id: videoId, title, author, duration, thumbnail };
   }
 
   async download(url, options) {
