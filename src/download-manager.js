@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const fs    = require('fs');
 const path  = require('path');
+const os    = require('os');
 const https = require('https');
 
 const BINARY = path.join(__dirname, '..', 'bin', 'yt-dlp');
@@ -45,59 +46,23 @@ function buildFormat(quality) {
   );
 }
 
-function run(args, onLog) {
-  return new Promise((resolve, reject) => {
-    const log = (line) => { if (onLog) onLog(line); };
-
-    log(`[spawn] ${BINARY}`);
-    log(`[args]  ${args.join(' ')}\n`);
-
-    let proc;
-    try {
-      proc = spawn(BINARY, args, { env: { ...process.env } });
-    } catch (err) {
-      log(`[error] spawn failed: ${err.message}`);
-      return reject(new Error(`Failed to start yt-dlp: ${err.message}`));
-    }
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (chunk) => {
-      const s = chunk.toString();
-      stdout += s;
-      s.split('\n').filter(Boolean).forEach((l) => log(`[stdout] ${l}`));
-    });
-
-    proc.stderr.on('data', (chunk) => {
-      const s = chunk.toString();
-      stderr += s;
-      s.split('\n').filter(Boolean).forEach((l) => log(`[stderr] ${l}`));
-    });
-
-    proc.on('close', (code) => {
-      log(`[exit] code=${code}`);
-      if (code === 0) return resolve(stdout);
-      reject(new Error(stderr.split('\n').filter(Boolean).pop() || `yt-dlp exited with code ${code}`));
-    });
-
-    proc.on('error', (err) => {
-      log(`[error] ${err.message}`);
-      reject(new Error(`Failed to start yt-dlp: ${err.message}`));
-    });
-  });
-}
-
 class DownloadManager {
   constructor(outputPath, mainWindow, storage) {
     this.outputPath = outputPath;
     this.mainWindow = mainWindow;
     this.storage    = storage;
+
+    // Background pre-extraction state
+    this._preExtractUrl     = null;
+    this._preExtractPromise = null;
+    this._preExtractFile    = null;
   }
 
   _log(line) {
     this.mainWindow.webContents.send('ytdlp-log', line);
   }
+
+  /* ── FAST VIDEO INFO (oEmbed + page scrape) ────────────── */
 
   async getVideoInfo(url) {
     const videoId = extractVideoId(url);
@@ -126,7 +91,6 @@ class DownloadManager {
       this._log(`[warn] oEmbed parse failed: ${e.message}`);
     }
 
-    // Pull duration from the embedded ytInitialPlayerResponse on the page
     let duration = 0;
     const durMatch = pageRes.data.match(/"approxDurationMs":"(\d+)"/);
     if (durMatch) duration = Math.round(parseInt(durMatch[1], 10) / 1000);
@@ -136,8 +100,64 @@ class DownloadManager {
     return { id: videoId, title, author, duration, thumbnail };
   }
 
+  /* ── BACKGROUND PRE-EXTRACTION ─────────────────────────── */
+  // Runs yt-dlp --dump-single-json in the background right after
+  // getVideoInfo returns. Saves output to a temp file so download()
+  // can use --load-info-json and skip extraction entirely.
+
+  preExtract(url) {
+    // Clean up any previous pre-extraction temp file
+    if (this._preExtractFile && fs.existsSync(this._preExtractFile)) {
+      try { fs.unlinkSync(this._preExtractFile); } catch {}
+    }
+    this._preExtractUrl  = url;
+    this._preExtractFile = null;
+
+    const tmpFile = path.join(os.tmpdir(), `snapy-preextract-${Date.now()}.json`);
+
+    this._preExtractPromise = new Promise((resolve) => {
+      let stdout = '';
+      let proc;
+
+      try {
+        proc = spawn(BINARY, [
+          url,
+          '--dump-single-json',
+          '--no-warnings',
+          '--no-playlist',
+          '--no-check-certificate',
+          '--socket-timeout', '10',
+          '--extractor-args', 'youtube:player_client=android',
+        ], { env: { ...process.env } });
+      } catch {
+        return resolve(null);
+      }
+
+      proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+      proc.stderr.on('data', () => {}); // discard
+
+      proc.on('close', (code) => {
+        if (code === 0 && stdout.length > 100) {
+          try {
+            fs.writeFileSync(tmpFile, stdout);
+            this._preExtractFile = tmpFile;
+            this._log('[pre-extract] background extraction complete');
+            resolve(tmpFile);
+          } catch {
+            resolve(null);
+          }
+        } else {
+          resolve(null);
+        }
+      });
+
+      proc.on('error', () => resolve(null));
+    });
+  }
+
+  /* ── DOWNLOAD ──────────────────────────────────────────── */
+
   async download(url, options) {
-    // Use pre-fetched info from the Fetch step to avoid a second 20-25s lookup
     const info = options.videoInfo || await this.getVideoInfo(url);
     const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
     const ext       = options.format === 'webm' ? 'webm' : 'mp4';
@@ -156,26 +176,42 @@ class DownloadManager {
 
     const format = buildFormat(options.quality);
 
+    // Wait for background pre-extraction if it's for the same URL
+    let infoJsonFile = null;
+    if (this._preExtractUrl === url && this._preExtractPromise) {
+      this._log('[download] waiting for background pre-extraction…');
+      infoJsonFile = await this._preExtractPromise;
+    }
+
+    // Build yt-dlp args — use --load-info-json if pre-extraction succeeded
+    const args = [];
+    if (infoJsonFile && fs.existsSync(infoJsonFile)) {
+      this._log('[download] using pre-extracted info (instant start)');
+      args.push('--load-info-json', infoJsonFile);
+    } else {
+      this._log('[download] no pre-extract cache, extracting inline…');
+      args.push(url);
+    }
+
+    args.push(
+      '--output', filepath,
+      '--format', format,
+      '--no-warnings',
+      '--no-playlist',
+      '--no-check-certificate',
+      '--newline',
+      '--progress',
+      '--no-color',
+      '--socket-timeout', '10',
+    );
+
     return new Promise((resolve, reject) => {
-      const proc = spawn(BINARY, [
-        url,
-        '--output', filepath,
-        '--format', format,
-        '--no-warnings',
-        '--no-playlist',
-        '--no-check-certificate',
-        '--newline',
-        '--progress',
-        '--no-color',
-        '--socket-timeout', '10',
-        '--extractor-args', 'youtube:player_client=android',
-      ], { env: { ...process.env } });
+      const proc = spawn(BINARY, args, { env: { ...process.env } });
 
       let totalSize = 0;
       let stderr    = '';
 
       const handleChunk = (chunk) => {
-        // yt-dlp uses \r for in-place updates; --newline switches to \n but split both
         const lines = chunk.toString().split(/\r?\n|\r/);
         for (const line of lines) {
           const m = PROGRESS_RE.exec(line);
@@ -204,6 +240,12 @@ class DownloadManager {
       });
 
       proc.on('close', (code) => {
+        // Clean up temp file
+        if (infoJsonFile) {
+          try { fs.unlinkSync(infoJsonFile); } catch {}
+          this._preExtractFile = null;
+        }
+
         if (code !== 0) {
           fs.unlink(filepath, () => {});
           const lastLine = stderr.split('\n').filter(Boolean).pop() || '';
