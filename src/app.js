@@ -21,6 +21,7 @@ class SnapyYT {
     this.loadGallery();
 
     window.electronAPI.onDownloadProgress((data) => this.handleProgress(data));
+    window.electronAPI.onYtdlpLog((line) => this.appendLog(line));
   }
 
   /* ── TITLEBAR ─────────────────────────────── */
@@ -116,6 +117,11 @@ class SnapyYT {
       if (newPath) this.setOutputPathLabel(newPath);
     });
 
+    document.getElementById('logClearBtn').addEventListener('click', () => {
+      document.getElementById('logOutput').value = '';
+      document.getElementById('logPanel').classList.add('hidden');
+    });
+
     document.getElementById('clearCompletedBtn').addEventListener('click', () => {
       this.completedDownloads = [];
       this.renderDownloadsList();
@@ -158,6 +164,9 @@ class SnapyYT {
     const btn = document.getElementById('fetchBtn');
     btn.lastChild.textContent = 'Fetching…';
     btn.disabled = true;
+
+    document.getElementById('logOutput').value = '';
+    document.getElementById('logPanel').classList.remove('hidden');
 
     const timeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Request timed out. Check your connection and try again.')), 12000)
@@ -237,6 +246,14 @@ class SnapyYT {
       document.getElementById('downloadBtn').disabled = false;
       this.toast(err.message || 'Download failed.', 'error');
     }
+  }
+
+  appendLog(line) {
+    const panel  = document.getElementById('logPanel');
+    const output = document.getElementById('logOutput');
+    panel.classList.remove('hidden');
+    output.value += line + '\n';
+    output.scrollTop = output.scrollHeight;
   }
 
   handleProgress(data) {

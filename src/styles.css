@@ -1095,6 +1095,58 @@ a      { text-decoration: none; }
 .fab:hover  { transform: scale(1.1) translateY(-2px); box-shadow: 0 12px 32px rgba(192,57,43,0.4); }
 .fab:active { transform: scale(0.97); }
 
+/* ── LOG PANEL ───────────────────────────────── */
+.log-panel {
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.log-panel.hidden { display: none; }
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  letter-spacing: 0.3px;
+}
+
+.log-clear-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text3);
+  transition: color var(--t) var(--ease);
+}
+
+.log-clear-btn:hover { color: var(--red); }
+
+.log-output {
+  display: block;
+  width: 100%;
+  height: 220px;
+  padding: 12px 14px;
+  background: #0e0e0e;
+  color: #d4d4d4;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.6;
+  border: none;
+  outline: none;
+  resize: vertical;
+  white-space: pre;
+  overflow: auto;
+}
+
+[data-theme="dark"] .log-output { background: #080808; }
+
 /* ── TOAST ───────────────────────────────────── */
 .toast {
   position: fixed;

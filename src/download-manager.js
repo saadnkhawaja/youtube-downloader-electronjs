@@ -23,9 +23,20 @@ function buildFormat(quality) {
   );
 }
 
-function run(args, onData) {
+function run(args, onLog) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(BINARY, args, { env: { ...process.env } });
+    const log = (line) => { if (onLog) onLog(line); };
+
+    log(`[spawn] ${BINARY}`);
+    log(`[args]  ${args.join(' ')}\n`);
+
+    let proc;
+    try {
+      proc = spawn(BINARY, args, { env: { ...process.env } });
+    } catch (err) {
+      log(`[error] spawn failed: ${err.message}`);
+      return reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+    }
 
     let stdout = '';
     let stderr = '';
@@ -33,21 +44,25 @@ function run(args, onData) {
     proc.stdout.on('data', (chunk) => {
       const s = chunk.toString();
       stdout += s;
-      if (onData) onData(s);
+      s.split('\n').filter(Boolean).forEach((l) => log(`[stdout] ${l}`));
     });
 
     proc.stderr.on('data', (chunk) => {
       const s = chunk.toString();
       stderr += s;
-      if (onData) onData(s);
+      s.split('\n').filter(Boolean).forEach((l) => log(`[stderr] ${l}`));
     });
 
     proc.on('close', (code) => {
+      log(`[exit] code=${code}`);
       if (code === 0) return resolve(stdout);
       reject(new Error(stderr.split('\n').filter(Boolean).pop() || `yt-dlp exited with code ${code}`));
     });
 
-    proc.on('error', (err) => reject(new Error(`Failed to start yt-dlp: ${err.message}`)));
+    proc.on('error', (err) => {
+      log(`[error] ${err.message}`);
+      reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+    });
   });
 }
 
@@ -58,6 +73,10 @@ class DownloadManager {
     this.storage    = storage;
   }
 
+  _log(line) {
+    this.mainWindow.webContents.send('ytdlp-log', line);
+  }
+
   async getVideoInfo(url) {
     const json = await run([
       url,
@@ -65,7 +84,7 @@ class DownloadManager {
       '--no-warnings',
       '--no-call-home',
       '--no-check-certificate',
-    ]);
+    ], (l) => this._log(l));
 
     const info = JSON.parse(json);
 
