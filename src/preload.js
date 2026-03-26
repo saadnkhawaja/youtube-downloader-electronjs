@@ -14,10 +14,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getPreferences:    ()           => ipcRenderer.invoke('get-preferences'),
   setPreferences:    (prefs)      => ipcRenderer.invoke('set-preferences', prefs),
   downloadVideo:     (url, opts)  => ipcRenderer.invoke('download-video', url, opts),
+  cancelDownload:    ()           => ipcRenderer.invoke('cancel-download'),
   getVideoInfo:      (url)        => ipcRenderer.invoke('get-video-info', url),
   onDownloadProgress:(cb)         => ipcRenderer.on('download-progress', (_, data) => cb(data)),
-  onDownloadStatus: (cb)         => ipcRenderer.on('download-status', (_, status) => cb(status)),
-  onYtdlpLog:       (cb)         => ipcRenderer.on('ytdlp-log', (_, line) => cb(line)),
+  onDownloadStatus:  (cb)         => ipcRenderer.on('download-status', (_, status) => cb(status)),
+  onYtdlpLog:        (cb)         => ipcRenderer.on('ytdlp-log', (_, line) => cb(line)),
   readClipboard:     ()           => {
     try { return navigator.clipboard.readText(); } catch { return Promise.resolve(''); }
   },

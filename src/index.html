@@ -168,13 +168,24 @@
             <div id="progressCard" class="progress-card hidden">
               <div class="progress-header">
                 <span id="progressTitle">Downloading…</span>
-                <span id="progressPercent">0%</span>
+                <div class="progress-header-right">
+                  <span id="progressPercent">0%</span>
+                  <button class="cancel-btn" id="cancelBtn" title="Cancel Download">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
               </div>
               <div class="progress-track">
                 <div id="progressBar" class="progress-bar-fill"></div>
               </div>
               <div id="progressMeta" class="progress-meta"></div>
             </div>
+
+            <!-- Debug log (collapsible) -->
+            <details class="log-panel" id="logPanel">
+              <summary class="log-toggle">Debug Log</summary>
+              <textarea id="logOutput" class="log-output" readonly spellcheck="false" wrap="off"></textarea>
+            </details>
 
             <!-- Downloads list -->
             <div class="section-head">

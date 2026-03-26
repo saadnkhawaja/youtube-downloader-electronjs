@@ -89,4 +89,6 @@ ipcMain.handle('set-preferences', async (event, prefs) => storage.setPreferences
 
 ipcMain.handle('download-video', async (event, url, options) => downloadManager.download(url, options));
 
+ipcMain.handle('cancel-download', async () => downloadManager.cancel());
+
 ipcMain.handle('get-video-info', async (event, url) => downloadManager.getVideoInfo(url));

@@ -7,7 +7,7 @@
   "author": "Saad Khawaja",
   "license": "MIT",
   "scripts": {
-    "postinstall": "node scripts/download-ytdlp.js",
+    "postinstall": "node scripts/setup-ytdlp.js",
     "start": "electron .",
     "dev": "electron . --dev",
     "build": "electron-builder",

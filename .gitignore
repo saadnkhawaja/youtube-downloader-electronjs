@@ -141,6 +141,9 @@ dist
 # yt-dlp native binary (downloaded separately per platform)
 bin/
 
+# Python venv for pip yt-dlp (created by setup-ytdlp.js)
+.venv/
+
 # snapy-yt specific
 .snapy-config.json
 .videos.json

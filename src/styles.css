@@ -551,6 +551,28 @@ a      { text-decoration: none; }
   font-weight: 600;
 }
 
+.progress-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cancel-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text3);
+  transition: background var(--t) var(--ease), color var(--t) var(--ease), border-color var(--t) var(--ease);
+}
+
+.cancel-btn svg { width: 13px; height: 13px; }
+.cancel-btn:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
 .progress-track {
   height: 5px;
   background: var(--surface2);
@@ -570,6 +592,52 @@ a      { text-decoration: none; }
 .progress-meta {
   font-size: 12px;
   color: var(--text3);
+}
+
+/* ── DEBUG LOG PANEL ─────────────────────────── */
+.log-panel {
+  margin-bottom: 24px;
+}
+
+.log-toggle {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text3);
+  cursor: pointer;
+  padding: 8px 0;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-toggle::before {
+  content: '▶';
+  font-size: 9px;
+  transition: transform var(--t) var(--ease);
+}
+
+.log-panel[open] .log-toggle::before {
+  transform: rotate(90deg);
+}
+
+.log-toggle:hover { color: var(--text2); }
+
+.log-output {
+  width: 100%;
+  height: 150px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 12px;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text2);
+  resize: vertical;
+  outline: none;
+  overflow: auto;
 }
 
 /* ── DOWNLOADS LIST ──────────────────────────── */
