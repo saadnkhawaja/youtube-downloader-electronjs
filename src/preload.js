@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteVideo:       (filename)   => ipcRenderer.invoke('delete-video', filename),
   trashFile:         (filename)   => ipcRenderer.invoke('trash-file', filename),
   openFile:          (filename)   => ipcRenderer.invoke('open-file', filename),
+  showFileInFolder:  (filename)   => ipcRenderer.invoke('show-file-in-folder', filename),
   openFolder:        ()           => ipcRenderer.invoke('open-folder'),
   openOutputFolder:  ()           => ipcRenderer.invoke('open-output-folder'),
   getOutputPath:     ()           => ipcRenderer.invoke('get-output-path'),

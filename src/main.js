@@ -83,6 +83,9 @@ ipcMain.handle('trash-file', async (_, filename) => {
 ipcMain.handle('open-file', async (_, filename) => {
   await shell.openPath(path.join(storage.getOutputPath(), filename));
 });
+ipcMain.handle('show-file-in-folder', async (_, filename) => {
+  shell.showItemInFolder(path.join(storage.getOutputPath(), filename));
+});
 ipcMain.handle('open-output-folder', async () => shell.openPath(storage.getOutputPath()));
 ipcMain.handle('open-folder', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

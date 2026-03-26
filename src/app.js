@@ -521,7 +521,10 @@ class SnapyYT {
       item.querySelector('.dl-act.play')?.addEventListener('click', () => {
         if (dl.filename) window.electronAPI.openFile(dl.filename);
       });
-      item.querySelector('.dl-act.folder')?.addEventListener('click', () => window.electronAPI.openOutputFolder());
+      item.querySelector('.dl-act.folder')?.addEventListener('click', () => {
+        if (dl.filename) window.electronAPI.showFileInFolder(dl.filename);
+        else window.electronAPI.openOutputFolder();
+      });
       item.querySelector('.dl-act.copy-link')?.addEventListener('click', () => {
         navigator.clipboard.writeText(dl.url || '').then(() => this.toast('Link copied!', 'success'));
       });
@@ -646,7 +649,11 @@ class SnapyYT {
     document.body.appendChild(menu);
 
     menu.querySelector('#ctxPlay')?.addEventListener('click', () => { if (dl.filename) window.electronAPI.openFile(dl.filename); this.closeContextMenu(); });
-    menu.querySelector('#ctxFolder')?.addEventListener('click', () => { window.electronAPI.openOutputFolder(); this.closeContextMenu(); });
+    menu.querySelector('#ctxFolder')?.addEventListener('click', () => {
+      if (dl.filename) window.electronAPI.showFileInFolder(dl.filename);
+      else window.electronAPI.openOutputFolder();
+      this.closeContextMenu();
+    });
     menu.querySelector('#ctxCopy')?.addEventListener('click', () => { navigator.clipboard.writeText(dl.url); this.toast('Link copied!', 'success'); this.closeContextMenu(); });
     menu.querySelector('#ctxYT')?.addEventListener('click', () => { window.electronAPI.openExternal(dl.url); this.closeContextMenu(); });
     menu.querySelector('#ctxRedownload')?.addEventListener('click', () => {
@@ -896,7 +903,11 @@ class SnapyYT {
     document.body.appendChild(menu);
 
     menu.querySelector('#gctxPlay')?.addEventListener('click', () => { window.electronAPI.openFile(v.filename); this.closeContextMenu(); });
-    menu.querySelector('#gctxFolder')?.addEventListener('click', () => { window.electronAPI.openOutputFolder(); this.closeContextMenu(); });
+    menu.querySelector('#gctxFolder')?.addEventListener('click', () => {
+      if (v.filename) window.electronAPI.showFileInFolder(v.filename);
+      else window.electronAPI.openOutputFolder();
+      this.closeContextMenu();
+    });
     menu.querySelector('#gctxCopy')?.addEventListener('click', () => { if (v.url) navigator.clipboard.writeText(v.url); this.toast('Link copied!', 'success'); this.closeContextMenu(); });
     menu.querySelector('#gctxYT')?.addEventListener('click', () => { if (v.url) window.electronAPI.openExternal(v.url); this.closeContextMenu(); });
     menu.querySelector('#gctxRedownload')?.addEventListener('click', () => {
