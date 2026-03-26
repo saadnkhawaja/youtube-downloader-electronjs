@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>snapy-yt</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- TITLEBAR -->
+  <div class="titlebar" id="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-logo">snapy-yt</span>
+      <span class="titlebar-sep">—</span>
+      <span class="titlebar-ver">v1.0</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="tb-btn minimize" id="btnMinimize">
+        <svg viewBox="0 0 12 2"><line x1="0" y1="1" x2="12" y2="1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tb-btn close" id="btnClose">
+        <svg viewBox="0 0 12 12"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="body-wrap">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M23 7l-7-5L7 7 1 4v15l6-3 9 5 7-4V7z"/></svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">snapy-yt</div>
+          <div class="brand-tag">download in a snap</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-page="downloader">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Downloader
+        </button>
+        <button class="nav-item" data-page="gallery">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          Gallery
+        </button>
+        <button class="nav-item" data-page="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Settings
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <button class="theme-toggle" id="themeToggle">
+          <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <span id="themeLabel">Light Mode</span>
+        </button>
+        <div class="sidebar-credits">
+          <button class="credits-link" id="githubLink">
+            <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+            © 2026 Saad Khawaja
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main">
+
+      <!-- ========== DOWNLOADER ========== -->
+      <div id="downloader" class="page active">
+        <div class="page-scroll">
+
+          <!-- URL row -->
+          <div class="url-row">
+            <div class="url-field" id="urlField">
+              <button class="folder-chip" id="folderChipBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                <span id="outputPathLabel">snapy-yt</span>
+              </button>
+              <div class="url-sep"></div>
+              <input type="text" id="urlInput" class="url-input" placeholder="Paste YouTube URL…" autocomplete="off" spellcheck="false">
+            </div>
+            <button class="fetch-btn" id="fetchBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <span>Fetch</span>
+            </button>
+          </div>
+
+          <!-- Fetch progress (spinner) -->
+          <div id="fetchProgress" class="fetch-progress hidden">
+            <div class="spinner"></div>
+            <span id="fetchProgressLabel">Fetching video information…</span>
+          </div>
+
+          <!-- Video preview card -->
+          <div id="videoCard" class="video-card hidden">
+            <div class="vc-thumb-col">
+              <div class="vc-thumb-wrap">
+                <img id="videoThumb" src="" alt="" class="vc-thumb">
+                <span id="videoDurationBadge" class="vc-duration"></span>
+              </div>
+            </div>
+            <div class="vc-details">
+              <div class="vc-title" id="videoTitle"></div>
+              <div class="vc-author" id="videoAuthor"></div>
+
+              <div class="vc-options">
+                <div class="opt-row">
+                  <span class="opt-label">Quality</span>
+                  <div class="opt-pills" id="qualityPills">
+                    <button class="pill active" data-quality="best">Best</button>
+                    <button class="pill" data-quality="1080">1080p</button>
+                    <button class="pill" data-quality="720">720p</button>
+                    <button class="pill" data-quality="480">480p</button>
+                    <button class="pill" data-quality="360">360p</button>
+                  </div>
+                </div>
+                <div class="opt-row" id="formatRow">
+                  <span class="opt-label">Format</span>
+                  <div class="opt-pills" id="formatPills">
+                    <button class="pill active" data-format="mp4">MP4</button>
+                    <button class="pill" data-format="mkv">MKV</button>
+                    <button class="pill" data-format="webm">WebM</button>
+                    <button class="pill audio-pill" data-format="audio">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="12" height="12"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                      Audio
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="vc-actions">
+                <button class="btn-queue" id="addToQueueBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                  Add to Queue
+                </button>
+                <button class="btn-download" id="downloadBtn">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Start Download
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active download progress card -->
+          <div id="progressCard" class="progress-card hidden">
+            <div class="pc-thumb-wrap">
+              <img id="progressThumb" src="" alt="" class="pc-thumb">
+            </div>
+            <div class="pc-body">
+              <div class="pc-title" id="progressTitle">Preparing…</div>
+              <div class="pc-bar-row">
+                <div class="pc-bar"><div id="progressBar" class="pc-fill" style="width:0%"></div></div>
+                <span id="progressPercent" class="pc-pct">0%</span>
+              </div>
+              <div class="pc-meta" id="progressMeta"></div>
+            </div>
+            <div class="pc-controls">
+              <button class="pc-btn pause" id="pauseBtn" title="Pause">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              </button>
+              <button class="pc-btn cancel" id="cancelBtn" title="Cancel">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Queue section -->
+          <div id="queueSection" class="queue-section hidden">
+            <div class="sec-hd">
+              <span class="sec-title">Queue</span>
+              <span id="queueCount" class="sec-badge">0</span>
+              <button class="sec-clear" id="clearQueueBtn">Clear</button>
+            </div>
+            <div id="queueList" class="queue-list"></div>
+          </div>
+
+          <!-- Downloads section -->
+          <div class="downloads-section">
+            <div class="sec-hd">
+              <span class="sec-title">Downloads</span>
+              <span id="activeCount" class="sec-badge hidden">0 active</span>
+              <button class="sec-clear" id="clearCompletedBtn">Clear list</button>
+            </div>
+            <div id="downloadsList" class="downloads-list"></div>
+            <div id="downloadsEmpty" class="dl-empty hidden">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="40" height="40"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <p>No downloads yet</p>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /downloader -->
+
+      <!-- ========== GALLERY ========== -->
+      <div id="gallery" class="page hidden">
+        <div class="page-scroll">
+
+          <div class="gallery-head">
+            <div>
+              <h1 class="pg-title">Gallery</h1>
+              <p class="pg-sub">All your saved media</p>
+            </div>
+            <button class="btn-outline-sm" id="openGalleryFolderBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Open Folder
+            </button>
+          </div>
+
+          <!-- Gallery controls -->
+          <div class="gallery-controls">
+            <div class="g-search-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="g-search-icon" width="14" height="14"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="gallerySearch" placeholder="Search…" class="g-search-input">
+            </div>
+            <div class="g-filters">
+              <button class="g-filter active" data-filter="all">All</button>
+              <button class="g-filter" data-filter="video">Video</button>
+              <button class="g-filter" data-filter="audio">Audio</button>
+            </div>
+            <div class="g-sort">
+              <select id="gallerySort" class="g-sort-select">
+                <option value="date-desc">Newest first</option>
+                <option value="date-asc">Oldest first</option>
+                <option value="name-asc">Name A–Z</option>
+                <option value="name-desc">Name Z–A</option>
+                <option value="size-desc">Largest first</option>
+                <option value="duration-desc">Longest first</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Gallery table -->
+          <div class="gallery-table-wrap">
+            <table class="gallery-table">
+              <thead>
+                <tr>
+                  <th style="width:100px">Preview</th>
+                  <th>Title</th>
+                  <th style="width:80px">Type</th>
+                  <th style="width:80px">Duration</th>
+                  <th style="width:80px">Size</th>
+                  <th style="width:100px">Date</th>
+                  <th style="width:48px"></th>
+                </tr>
+              </thead>
+              <tbody id="galleryTableBody"></tbody>
+            </table>
+            <div id="galleryEmpty" class="g-empty hidden">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" width="48" height="48"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <p>No videos yet</p>
+              <span>Download your first video from the Downloader tab</span>
+            </div>
+          </div>
+
+          <!-- Gallery pagination -->
+          <div id="galleryPagination" class="g-pagination hidden">
+            <button class="g-page-btn" id="galPrevBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="15 18 9 12 15 6"/></svg>
+            </button>
+            <span id="galPageLabel" class="g-page-label">Page 1 of 1</span>
+            <button class="g-page-btn" id="galNextBtn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><polyline points="9 18 15 12 9 6"/></svg>
+            </button>
+          </div>
+
+        </div>
+      </div><!-- /gallery -->
+
+      <!-- ========== SETTINGS ========== -->
+      <div id="settings" class="page hidden">
+        <div class="page-scroll">
+          <div class="page-hd">
+            <h1 class="pg-title">Settings</h1>
+            <p class="pg-sub">Configure your download preferences</p>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-sec-title">Storage &amp; Output</h4>
+            <div class="settings-card">
+              <div class="settings-row">
+                <div>
+                  <div class="sr-label">Default Output Folder</div>
+                  <div class="sr-value" id="settingsOutputPath"></div>
+                </div>
+                <button class="btn-outline-sm" id="changePathBtn">Change</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-sec-title">Encoding Preferences</h4>
+            <div class="settings-grid">
+              <div class="settings-card">
+                <div class="sr-label" style="margin-bottom:12px">Default Format</div>
+                <div class="opt-pills">
+                  <button class="pill active" data-pref="format" data-value="mp4">MP4</button>
+                  <button class="pill" data-pref="format" data-value="mkv">MKV</button>
+                  <button class="pill" data-pref="format" data-value="webm">WebM</button>
+                  <button class="pill" data-pref="format" data-value="audio">Audio</button>
+                </div>
+              </div>
+              <div class="settings-card">
+                <div class="sr-label" style="margin-bottom:12px">Default Quality</div>
+                <div class="opt-pills">
+                  <button class="pill active" data-pref="quality" data-value="best">Best</button>
+                  <button class="pill" data-pref="quality" data-value="1080">1080p</button>
+                  <button class="pill" data-pref="quality" data-value="720">720p</button>
+                  <button class="pill" data-pref="quality" data-value="480">480p</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-sec-title">System</h4>
+            <div class="settings-card">
+              <div class="settings-row">
+                <div>
+                  <div class="sr-label">Check for updates automatically</div>
+                  <div class="sr-sub">Keep snapy-yt running at peak performance</div>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" id="autoUpdateToggle" checked>
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn-save" id="saveSettingsBtn">Save Changes</button>
+        </div>
+      </div><!-- /settings -->
+
+    </main>
+  </div>
+
+  <!-- FAB -->
+  <button class="fab" id="fabBtn" title="New Download">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+
+</div>
+<script src="app.js"></script>
+</body>
+</html>
