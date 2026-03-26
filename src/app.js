@@ -10,6 +10,15 @@ class SnapyYT {
     this.selectedQuality = 'best';
     this.selectedFormat  = 'mp4';
 
+    // Auto Start settings
+    this.autoStart        = false;
+    this.autoStartQuality = 'best';
+    this.autoStartFormat  = 'mp4';
+
+    // Clipboard monitoring
+    this._lastClipboard   = '';
+    this._clipboardTimer  = null;
+
     // Queue
     this.downloadQueue   = [];   // { id, url, info, quality, format, title, thumb }
     this.isDownloading   = false;
@@ -42,6 +51,7 @@ class SnapyYT {
     this.loadSettings();
     this.loadRecentDownloads();
     this.loadGallery();
+    this.startClipboardMonitor();
   }
 
   /* ═══ TITLEBAR ═══════════════════════════════ */
@@ -100,27 +110,11 @@ class SnapyYT {
     document.getElementById('urlInput').addEventListener('keydown', e => { if (e.key === 'Enter') this.fetchInfo(); });
     document.getElementById('downloadBtn').addEventListener('click', () => this.startDownload());
     document.getElementById('addToQueueBtn').addEventListener('click', () => this.addCurrentToQueue());
-    document.getElementById('cancelBtn').addEventListener('click', () => this.cancelDownload());
     document.getElementById('clearCompletedBtn').addEventListener('click', () => this.clearCompleted());
     document.getElementById('clearQueueBtn').addEventListener('click', () => this.clearQueue());
     document.getElementById('folderChipBtn').addEventListener('click', async () => {
       const p = await window.electronAPI.openFolder();
       if (p) { this.outputDir = p; this.setOutputPathLabel(p); }
-    });
-
-    // Pause/resume toggle
-    document.getElementById('pauseBtn').addEventListener('click', () => {
-      if (this._isPaused) {
-        window.electronAPI.resumeDownload();
-        this._isPaused = false;
-        document.getElementById('pauseBtn').innerHTML = this._pauseIcon();
-        document.getElementById('pauseBtn').classList.remove('resume');
-      } else {
-        window.electronAPI.pauseDownload();
-        this._isPaused = true;
-        document.getElementById('pauseBtn').innerHTML = this._resumeIcon();
-        document.getElementById('pauseBtn').classList.add('resume');
-      }
     });
 
     // Quality pills
@@ -155,10 +149,36 @@ class SnapyYT {
     document.getElementById('outputPathLabel').textContent = parts.length >= 2 ? parts.slice(-2).join('/') : p;
   }
 
+  /* ─── Clipboard monitor ─── */
+  startClipboardMonitor() {
+    const checkClipboard = async () => {
+      try {
+        const text = (await navigator.clipboard.readText()).trim();
+        if (text && text !== this._lastClipboard && YT_REGEX.test(text)) {
+          this._lastClipboard = text;
+          const input = document.getElementById('urlInput');
+          if (input.value.trim() !== text) {
+            input.value = text;
+            this.fetchInfo(true); // silent=true: suppress empty-URL toast
+          }
+        }
+      } catch { /* clipboard permission denied or not available */ }
+    };
+
+    // Check on window focus (user switches to app)
+    window.addEventListener('focus', checkClipboard);
+
+    // Also poll every 2s while app is running (catches clipboard changes mid-session)
+    this._clipboardTimer = setInterval(checkClipboard, 2000);
+
+    // Do one check immediately on startup
+    checkClipboard();
+  }
+
   /* ─── Fetch ─── */
-  async fetchInfo() {
+  async fetchInfo(silent = false) {
     const raw = document.getElementById('urlInput').value.trim();
-    if (!raw) { this.toast('Paste a YouTube URL first.', 'error'); return; }
+    if (!raw) { if (!silent) this.toast('Paste a YouTube URL first.', 'error'); return; }
 
     const btn = document.getElementById('fetchBtn');
     btn.querySelector('span').textContent = 'Fetching…';
@@ -174,12 +194,39 @@ class SnapyYT {
       const info = await Promise.race([window.electronAPI.getVideoInfo(raw), timeout]);
       this.currentUrl  = raw;
       this.currentInfo = info;
+
+      // Auto Start: skip video card, directly download with auto-start settings
+      if (this.autoStart) {
+        const item = {
+          id:      ++this._dlIdCounter,
+          url:     this.currentUrl,
+          info:    { ...info },
+          quality: this.autoStartQuality,
+          format:  this.autoStartFormat,
+          title:   info.title || 'Unknown',
+          thumb:   info.thumbnail || '',
+        };
+        // Clear input so same URL isn't re-triggered by clipboard monitor
+        document.getElementById('urlInput').value = '';
+        this._lastClipboard = raw;
+        this.currentUrl  = '';
+        this.currentInfo = null;
+        if (!this.isDownloading) {
+          this.executeDownload(item).catch(() => {});
+        } else {
+          this.downloadQueue.push(item);
+          this.renderQueueSection();
+          this.toast('Added to queue (auto-start).', 'success');
+        }
+        return;
+      }
+
       this.showVideoCard(info);
     } catch (err) {
       this.toast(err.message || 'Failed to fetch video info.', 'error');
     } finally {
       document.getElementById('fetchProgress').classList.add('hidden');
-      btn.querySelector('span').textContent = 'Fetch';
+      btn.querySelector('span').textContent = 'Snapy!';
       btn.disabled = false;
     }
   }
@@ -245,17 +292,9 @@ class SnapyYT {
     this.sessionDownloads.unshift(dlItem);
     this.renderDownloadsList();
 
-    // Show progress card
+    // Hide video card while downloading
     document.getElementById('videoCard').classList.add('hidden');
-    document.getElementById('progressCard').classList.remove('hidden');
-    document.getElementById('progressThumb').src = thumb;
-    document.getElementById('progressTitle').textContent   = title;
-    document.getElementById('progressPercent').textContent = '0%';
-    document.getElementById('progressBar').style.width     = '0%';
-    document.getElementById('progressMeta').textContent    = '';
-    document.getElementById('downloadBtn').disabled        = true;
-    document.getElementById('pauseBtn').innerHTML          = this._pauseIcon();
-    document.getElementById('pauseBtn').classList.remove('resume');
+    document.getElementById('downloadBtn').disabled = true;
     this._isPaused = false;
 
     try {
@@ -266,21 +305,10 @@ class SnapyYT {
       dlItem.filename = result.filename;
       dlItem.type     = result.type || dlItem.type;
 
-      document.getElementById('progressTitle').textContent   = 'Download Complete!';
-      document.getElementById('progressPercent').textContent = '100%';
-      document.getElementById('progressBar').style.width     = '100%';
+      document.getElementById('downloadBtn').disabled = false;
       this.toast('Download complete!', 'success');
-
-      setTimeout(() => {
-        document.getElementById('progressCard').classList.add('hidden');
-        document.getElementById('downloadBtn').disabled = false;
-      }, 2000);
-
-      // Trim session list to 10
-      this.sessionDownloads = this.sessionDownloads.filter(d => d.status !== 'active' || d.id !== id);
     } catch (err) {
       dlItem.status = err.message?.includes('cancelled') ? 'cancelled' : 'failed';
-      document.getElementById('progressCard').classList.add('hidden');
       document.getElementById('downloadBtn').disabled = false;
       if (dlItem.status !== 'cancelled') this.toast(err.message || 'Download failed.', 'error');
       else this.toast('Download cancelled.', 'error');
@@ -312,38 +340,32 @@ class SnapyYT {
 
   /* ─── Progress handlers ─── */
   handleProgress(data) {
-    const pct = data.percent || 0;
-    document.getElementById('progressBar').style.width     = `${pct}%`;
-    document.getElementById('progressPercent').textContent = `${pct}%`;
-
-    const parts = [];
-    if (data.totalSize && data.currentSize) parts.push(`${this.fmtSize(data.currentSize)} / ${this.fmtSize(data.totalSize)}`);
-    if (data.speed) parts.push(data.speed);
-    if (data.eta)   parts.push(`ETA ${data.eta}`);
-    document.getElementById('progressMeta').textContent = parts.join('  ·  ');
-
-    // In-place update of active dl-item
+    const pct    = data.percent || 0;
     const active = this.sessionDownloads.find(d => d.status === 'active');
-    if (active) {
-      active.percent = pct;
-      active.speed   = data.speed || '';
-      active.eta     = data.eta || '';
-      const el = document.querySelector(`.dl-item[data-dl-id="${active.id}"]`);
-      if (el) {
-        const fill = el.querySelector('.dl-bar-fill');
-        const pct2 = el.querySelector('.dl-pct');
-        const meta = el.querySelector('.dl-speed-eta');
-        if (fill) fill.style.width = `${pct}%`;
-        if (pct2) pct2.textContent = `${pct}%`;
-        if (meta) meta.textContent = [data.speed, data.eta ? `ETA ${data.eta}` : ''].filter(Boolean).join(' · ');
-      }
+    if (!active) return;
+
+    active.percent = pct;
+    active.speed   = data.speed || '';
+    active.eta     = data.eta   || '';
+
+    const el = document.querySelector(`.dl-item[data-dl-id="${active.id}"]`);
+    if (el) {
+      const fill = el.querySelector('.dl-bar-fill');
+      const pct2 = el.querySelector('.dl-pct');
+      const meta = el.querySelector('.dl-speed-eta');
+      if (fill) fill.style.width = `${pct}%`;
+      if (pct2) pct2.textContent = `${pct}%`;
+      if (meta) meta.textContent = [data.speed, data.eta ? `ETA ${data.eta}` : ''].filter(Boolean).join(' · ');
     }
   }
 
   handleStatus(status) {
     if (!status) return;
-    const el = document.getElementById('progressTitle');
-    if (el) el.textContent = status;
+    // Update the active dl-item's status text if visible
+    const active = this.sessionDownloads.find(d => d.status === 'active');
+    if (!active) return;
+    const el = document.querySelector(`.dl-item[data-dl-id="${active.id}"] .dl-speed-eta`);
+    if (el && !active.speed) el.textContent = status;
   }
 
   /* ─── Load recent downloads from storage ─── */
@@ -422,14 +444,10 @@ class SnapyYT {
     const wrapper = document.createElement('div');
     wrapper.className = 'dl-wrapper';
 
-    // Delete zone (behind item)
+    // Delete zone (behind item — visual only, deletion triggered by drag release)
     const deleteZone = document.createElement('div');
     deleteZone.className = 'dl-delete-zone';
-    deleteZone.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg><span>Remove</span>`;
-    deleteZone.addEventListener('click', () => {
-      this.sessionDownloads = this.sessionDownloads.filter(d => d.id !== dl.id);
-      this.renderDownloadsList();
-    });
+    deleteZone.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
     wrapper.appendChild(deleteZone);
 
     const item = document.createElement('div');
@@ -538,7 +556,7 @@ class SnapyYT {
 
   setupDragToDelete(itemEl, wrapper, dl) {
     let startX = 0, currentX = 0, dragging = false;
-    const REVEAL = 80;
+    const THRESHOLD = 80; // drag this far left to trigger delete
 
     itemEl.addEventListener('pointerdown', (e) => {
       if (e.target.closest('button')) return;
@@ -552,33 +570,30 @@ class SnapyYT {
       if (!dragging) return;
       const dx = e.clientX - startX;
       if (dx >= 0) return;
-      currentX = Math.max(-REVEAL, dx);
+      currentX = dx; // no cap — let it slide freely so delete zone fully reveals
       itemEl.style.transform = `translateX(${currentX}px)`;
     });
 
     const endDrag = () => {
       if (!dragging) return;
       dragging = false;
-      itemEl.style.transition = 'transform 0.2s ease';
-      if (currentX < -REVEAL / 2) {
-        itemEl.style.transform = `translateX(-${REVEAL}px)`;
-        wrapper.classList.add('drag-revealed');
+      if (currentX < -THRESHOLD) {
+        // Past threshold — animate out and delete
+        itemEl.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+        itemEl.style.transform = `translateX(-110%)`;
+        itemEl.style.opacity   = '0';
+        setTimeout(() => {
+          this.sessionDownloads = this.sessionDownloads.filter(d => d.id !== dl.id);
+          this.renderDownloadsList();
+        }, 200);
       } else {
-        itemEl.style.transform = 'translateX(0)';
-        wrapper.classList.remove('drag-revealed');
+        // Snap back
+        itemEl.style.transition = 'transform 0.2s ease';
+        itemEl.style.transform  = 'translateX(0)';
       }
     };
     itemEl.addEventListener('pointerup',     endDrag);
     itemEl.addEventListener('pointercancel', endDrag);
-
-    // Click elsewhere resets
-    document.addEventListener('click', (e) => {
-      if (!wrapper.contains(e.target) && wrapper.classList.contains('drag-revealed')) {
-        itemEl.style.transition = 'transform 0.2s ease';
-        itemEl.style.transform = 'translateX(0)';
-        wrapper.classList.remove('drag-revealed');
-      }
-    });
   }
 
   showItemContextMenu(e, dl) {
@@ -914,6 +929,36 @@ class SnapyYT {
         btn.classList.add('active');
       });
     });
+
+    // Auto Start toggle
+    const autoStartToggle = document.getElementById('autoStartToggle');
+    const autoStartOptions = document.getElementById('autoStartOptions');
+    autoStartToggle?.addEventListener('change', () => {
+      this.autoStart = autoStartToggle.checked;
+      if (this.autoStart) {
+        autoStartOptions?.classList.remove('hidden');
+      } else {
+        autoStartOptions?.classList.add('hidden');
+      }
+    });
+
+    // Auto Start quality pills
+    document.querySelectorAll('[data-as-quality]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-as-quality]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.autoStartQuality = btn.dataset.asQuality;
+      });
+    });
+
+    // Auto Start format pills
+    document.querySelectorAll('[data-as-format]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-as-format]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.autoStartFormat = btn.dataset.asFormat;
+      });
+    });
   }
 
   async loadSettings() {
@@ -930,6 +975,25 @@ class SnapyYT {
       this.selectedFormat  = prefs.format  || 'mp4';
       this.selectedQuality = prefs.quality || 'best';
 
+      // Auto Start
+      this.autoStart        = prefs.autoStart        || false;
+      this.autoStartQuality = prefs.autoStartQuality || 'best';
+      this.autoStartFormat  = prefs.autoStartFormat  || 'mp4';
+
+      const autoStartToggle  = document.getElementById('autoStartToggle');
+      const autoStartOptions = document.getElementById('autoStartOptions');
+      if (autoStartToggle) autoStartToggle.checked = this.autoStart;
+      if (this.autoStart) autoStartOptions?.classList.remove('hidden');
+      else                autoStartOptions?.classList.add('hidden');
+
+      // Restore auto-start quality pill
+      const asQBtn = document.querySelector(`[data-as-quality="${this.autoStartQuality}"]`);
+      if (asQBtn) { document.querySelectorAll('[data-as-quality]').forEach(b => b.classList.remove('active')); asQBtn.classList.add('active'); }
+
+      // Restore auto-start format pill
+      const asFBtn = document.querySelector(`[data-as-format="${this.autoStartFormat}"]`);
+      if (asFBtn) { document.querySelectorAll('[data-as-format]').forEach(b => b.classList.remove('active')); asFBtn.classList.add('active'); }
+
       // Sync download pills
       const dlFmt = document.querySelector(`#formatPills [data-format="${this.selectedFormat}"]`);
       if (dlFmt) { document.querySelectorAll('#formatPills .pill').forEach(b => b.classList.remove('active')); dlFmt.classList.add('active'); }
@@ -940,11 +1004,32 @@ class SnapyYT {
 
   async saveSettings() {
     try {
-      const fmt = document.querySelector('[data-pref="format"].active')?.dataset.value || 'mp4';
-      const q   = document.querySelector('[data-pref="quality"].active')?.dataset.value || 'best';
-      await window.electronAPI.setPreferences({ format: fmt, quality: q, autoUpdate: document.getElementById('autoUpdateToggle').checked });
-      this.selectedFormat  = fmt;
-      this.selectedQuality = q;
+      const fmt  = document.querySelector('[data-pref="format"].active')?.dataset.value  || 'mp4';
+      const q    = document.querySelector('[data-pref="quality"].active')?.dataset.value || 'best';
+      const asQ  = document.querySelector('[data-as-quality].active')?.dataset.asQuality  || 'best';
+      const asFmt = document.querySelector('[data-as-format].active')?.dataset.asFormat   || 'mp4';
+      const autoStart = document.getElementById('autoStartToggle')?.checked || false;
+
+      await window.electronAPI.setPreferences({
+        format: fmt, quality: q,
+        autoUpdate:       document.getElementById('autoUpdateToggle').checked,
+        autoStart,
+        autoStartQuality: asQ,
+        autoStartFormat:  asFmt,
+      });
+
+      this.selectedFormat   = fmt;
+      this.selectedQuality  = q;
+      this.autoStart        = autoStart;
+      this.autoStartQuality = asQ;
+      this.autoStartFormat  = asFmt;
+
+      // Sync download pills with new defaults
+      const dlFmt = document.querySelector(`#formatPills [data-format="${fmt}"]`);
+      if (dlFmt) { document.querySelectorAll('#formatPills .pill').forEach(b => b.classList.remove('active')); dlFmt.classList.add('active'); }
+      const dlQ = document.querySelector(`#qualityPills [data-quality="${q}"]`);
+      if (dlQ)  { document.querySelectorAll('#qualityPills .pill').forEach(b => b.classList.remove('active')); dlQ.classList.add('active'); }
+
       this.toast('Settings saved!', 'success');
     } catch { this.toast('Failed to save settings.', 'error'); }
   }

@@ -98,8 +98,8 @@
               <input type="text" id="urlInput" class="url-input" placeholder="Paste YouTube URL…" autocomplete="off" spellcheck="false">
             </div>
             <button class="fetch-btn" id="fetchBtn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <span>Fetch</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              <span>Snapy!</span>
             </button>
           </div>
 
@@ -156,29 +156,6 @@
                   Start Download
                 </button>
               </div>
-            </div>
-          </div>
-
-          <!-- Active download progress card -->
-          <div id="progressCard" class="progress-card hidden">
-            <div class="pc-thumb-wrap">
-              <img id="progressThumb" src="" alt="" class="pc-thumb">
-            </div>
-            <div class="pc-body">
-              <div class="pc-title" id="progressTitle">Preparing…</div>
-              <div class="pc-bar-row">
-                <div class="pc-bar"><div id="progressBar" class="pc-fill" style="width:0%"></div></div>
-                <span id="progressPercent" class="pc-pct">0%</span>
-              </div>
-              <div class="pc-meta" id="progressMeta"></div>
-            </div>
-            <div class="pc-controls">
-              <button class="pc-btn pause" id="pauseBtn" title="Pause">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-              </button>
-              <button class="pc-btn cancel" id="cancelBtn" title="Cancel">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
             </div>
           </div>
 
@@ -324,6 +301,45 @@
                   <button class="pill" data-pref="quality" data-value="1080">1080p</button>
                   <button class="pill" data-pref="quality" data-value="720">720p</button>
                   <button class="pill" data-pref="quality" data-value="480">480p</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section">
+            <h4 class="settings-sec-title">Auto Start</h4>
+            <div class="settings-card">
+              <div class="settings-row">
+                <div>
+                  <div class="sr-label">Auto Start Downloads</div>
+                  <div class="sr-sub">When a YouTube URL is detected in clipboard, fetch and start downloading immediately — no confirmation needed</div>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" id="autoStartToggle">
+                  <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                </label>
+              </div>
+              <!-- Auto Start quality/format options — shown only when toggle is on -->
+              <div id="autoStartOptions" class="auto-start-options hidden">
+                <div class="auto-start-divider"></div>
+                <div class="opt-row">
+                  <span class="opt-label">Quality</span>
+                  <div class="opt-pills" id="autoStartQualityPills">
+                    <button class="pill active" data-as-quality="best">Best</button>
+                    <button class="pill" data-as-quality="1080">1080p</button>
+                    <button class="pill" data-as-quality="720">720p</button>
+                    <button class="pill" data-as-quality="480">480p</button>
+                    <button class="pill" data-as-quality="360">360p</button>
+                  </div>
+                </div>
+                <div class="opt-row" style="margin-top:8px">
+                  <span class="opt-label">Format</span>
+                  <div class="opt-pills" id="autoStartFormatPills">
+                    <button class="pill active" data-as-format="mp4">MP4</button>
+                    <button class="pill" data-as-format="mkv">MKV</button>
+                    <button class="pill" data-as-format="webm">WebM</button>
+                    <button class="pill" data-as-format="audio">Audio</button>
+                  </div>
                 </div>
               </div>
             </div>

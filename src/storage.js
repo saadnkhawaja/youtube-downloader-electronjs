@@ -64,9 +64,12 @@ class Storage {
   getPreferences() {
     const config = this.readConfig();
     return {
-      format: config.format || 'mp4',
-      quality: config.quality || 'best',
-      autoUpdate: config.autoUpdate !== false,
+      format:           config.format           || 'mp4',
+      quality:          config.quality          || 'best',
+      autoUpdate:       config.autoUpdate       !== false,
+      autoStart:        config.autoStart        || false,
+      autoStartFormat:  config.autoStartFormat  || 'mp4',
+      autoStartQuality: config.autoStartQuality || 'best',
     };
   }
 
