@@ -33,7 +33,14 @@ function resolveYtdlp() {
   return path.join(ROOT, 'bin', 'yt-dlp');
 }
 
-const BINARY = resolveYtdlp();
+/* Lazy — resolved on first use so main.js ensureFastYtdlp() has time to run */
+let _binary = null;
+function getBinary() {
+  if (!_binary) {
+    _binary = resolveYtdlp();
+  }
+  return _binary;
+}
 
 const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)(?:\s+at\s+([\d.]+)\s*([KMGT]iB)\/s)?/;
 
@@ -62,11 +69,17 @@ function parseSize(num, unit) {
   return Math.round(n * (map[unit] || 1));
 }
 
+const VALID_HEIGHTS = new Set([360, 480, 720, 1080, 1440, 2160]);
+
 function buildFormat(quality) {
   if (!quality || quality === 'best') {
     return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
   }
   const h = parseInt(quality, 10);
+  // Reject stale/invalid quality values (e.g. ytdl-core format IDs like '18', '313')
+  if (!VALID_HEIGHTS.has(h)) {
+    return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
+  }
   return (
     `best[height<=${h}][ext=mp4]` +
     `/bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]` +
@@ -139,7 +152,7 @@ class DownloadManager {
 
     this._sendStatus('');
     this._log(`[info] title="${title}" author="${author}" duration=${duration}s`);
-    this._log(`[info] yt-dlp binary: ${BINARY}`);
+    this._log(`[info] yt-dlp binary: ${getBinary()}`);
 
     return { id: videoId, title, author, duration, thumbnail };
   }
@@ -148,11 +161,11 @@ class DownloadManager {
 
   _ytdlpDownload(url, filepath, format, info, filename) {
     this._sendStatus('Starting download…');
-    this._log(`[yt-dlp] spawning: ${BINARY}`);
+    this._log(`[yt-dlp] spawning: ${getBinary()}`);
     this._log(`[yt-dlp] format: ${format}`);
 
     return new Promise((resolve, reject) => {
-      const proc = spawn(BINARY, [
+      const proc = spawn(getBinary(), [
         url,
         '--output', filepath,
         '--format', format,
