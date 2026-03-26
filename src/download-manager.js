@@ -1,48 +1,35 @@
 const { spawn } = require('child_process');
+const https = require('https');
+const http  = require('http');
 const fs    = require('fs');
 const path  = require('path');
-const https = require('https');
 
-/* ── Resolve yt-dlp binary: prefer venv (fast), fallback to standalone ── */
-
+/* ── Resolve yt-dlp: venv → system → standalone ── */
 const ROOT   = path.join(__dirname, '..');
 const MARKER = path.join(ROOT, 'bin', '.ytdlp-method');
 
 function resolveYtdlp() {
-  // 1. Check marker file from setup script
   try {
-    const method = fs.readFileSync(MARKER, 'utf8').trim();
-    if (method === 'venv') {
-      const venvBin = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
-      if (fs.existsSync(venvBin)) return venvBin;
+    const m = fs.readFileSync(MARKER, 'utf8').trim();
+    if (m === 'venv') {
+      const b = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
+      if (fs.existsSync(b)) return b;
     }
   } catch {}
-
-  // 2. Check if venv exists even without marker
-  const venvBin = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
-  if (fs.existsSync(venvBin)) return venvBin;
-
-  // 3. Check system-wide yt-dlp (pip installed globally)
+  const venv = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
+  if (fs.existsSync(venv)) return venv;
   try {
     const { execSync } = require('child_process');
-    const sysPath = execSync('which yt-dlp 2>/dev/null', { encoding: 'utf8' }).trim();
-    if (sysPath && fs.existsSync(sysPath)) return sysPath;
+    const sys = execSync('which yt-dlp 2>/dev/null', { encoding: 'utf8' }).trim();
+    if (sys && fs.existsSync(sys)) return sys;
   } catch {}
-
-  // 4. Fallback: standalone binary
   return path.join(ROOT, 'bin', 'yt-dlp');
 }
 
-/* Lazy — resolved on first use so main.js ensureFastYtdlp() has time to run */
 let _binary = null;
-function getBinary() {
-  if (!_binary) {
-    _binary = resolveYtdlp();
-  }
-  return _binary;
-}
+const getBinary = () => { if (!_binary) _binary = resolveYtdlp(); return _binary; };
 
-const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)(?:\s+at\s+([\d.]+)\s*([KMGT]iB)\/s)?/;
+const PROGRESS_RE = /\[download\]\s+([\d.]+)%\s+of\s+~?\s*([\d.]+)([KMGT]iB)(?:\s+at\s+([\d.]+)\s*([KMGT]iB)\/s)?(?:\s+ETA\s+(\S+))?/;
 
 function extractVideoId(url) {
   const m = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
@@ -50,12 +37,13 @@ function extractVideoId(url) {
 }
 
 function httpGet(url) {
+  const lib = url.startsWith('https') ? https : http;
   return new Promise((resolve, reject) => {
-    const req = https.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    const req = lib.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36' },
     }, (res) => {
       let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      res.on('data', c => data += c);
       res.on('end', () => resolve({ status: res.statusCode, data }));
     });
     req.on('error', reject);
@@ -71,221 +59,152 @@ function parseSize(num, unit) {
 
 const VALID_HEIGHTS = new Set([360, 480, 720, 1080, 1440, 2160]);
 
-function buildFormat(quality) {
-  if (!quality || quality === 'best') {
-    return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
+function buildFormat(quality, format) {
+  if (format === 'audio') return 'bestaudio[ext=m4a]/bestaudio[ext=opus]/bestaudio';
+  if (format === 'mkv') {
+    if (!quality || quality === 'best') return 'bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best';
+    const h = parseInt(quality, 10);
+    if (!VALID_HEIGHTS.has(h)) return 'bestvideo+bestaudio/best';
+    return `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`;
   }
+  if (!quality || quality === 'best') return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
   const h = parseInt(quality, 10);
-  // Reject stale/invalid quality values (e.g. ytdl-core format IDs like '18', '313')
-  if (!VALID_HEIGHTS.has(h)) {
-    return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
-  }
-  return (
-    `best[height<=${h}][ext=mp4]` +
-    `/bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]` +
-    `/best[height<=${h}]/best`
-  );
-}
-
-function fmtSpeed(bytesPerSec) {
-  if (bytesPerSec >= 1024 * 1024) return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MiB/s`;
-  if (bytesPerSec >= 1024) return `${(bytesPerSec / 1024).toFixed(0)} KiB/s`;
-  return `${Math.round(bytesPerSec)} B/s`;
+  if (!VALID_HEIGHTS.has(h)) return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
+  return `best[height<=${h}][ext=mp4]/bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}]/best`;
 }
 
 class DownloadManager {
   constructor(outputPath, mainWindow, storage) {
-    this.outputPath = outputPath;
-    this.mainWindow = mainWindow;
-    this.storage    = storage;
-
-    // Active download tracking (for cancel)
+    this.outputPath  = outputPath;
+    this.mainWindow  = mainWindow;
+    this.storage     = storage;
     this._activeProc = null;
     this._cancelled  = false;
+    this._paused     = false;
   }
 
-  _log(line) {
-    try { this.mainWindow.webContents.send('ytdlp-log', line); } catch {}
-  }
-
-  _sendStatus(status) {
-    try { this.mainWindow.webContents.send('download-status', status); } catch {}
-  }
-
-  _sendProgress(data) {
-    try { this.mainWindow.webContents.send('download-progress', data); } catch {}
-  }
-
-  /* ── FAST VIDEO INFO (oEmbed + page scrape) ────────────── */
+  _log(l)             { try { this.mainWindow.webContents.send('ytdlp-log', l); } catch {} }
+  _sendStatus(s)      { try { this.mainWindow.webContents.send('download-status', s); } catch {} }
+  _sendProgress(d)    { try { this.mainWindow.webContents.send('download-progress', d); } catch {} }
 
   async getVideoInfo(url) {
     const videoId = extractVideoId(url);
     if (!videoId) throw new Error('Could not extract video ID from URL');
-
     this._sendStatus('Fetching video information…');
-    this._log(`[info] fetching via oEmbed + page scrape (video=${videoId})`);
-
-    const oembedUrl = `https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${videoId}&format=json`;
-    const pageUrl   = `https://www.youtube.com/watch?v=${videoId}`;
 
     const [oembedRes, pageRes] = await Promise.all([
-      httpGet(oembedUrl),
-      httpGet(pageUrl),
+      httpGet(`https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${videoId}&format=json`),
+      httpGet(`https://www.youtube.com/watch?v=${videoId}`),
     ]);
 
-    let title     = 'Unknown Title';
-    let author    = 'Unknown';
+    let title = 'Unknown Title', author = 'Unknown';
     let thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-
     try {
-      const oembed = JSON.parse(oembedRes.data);
-      title     = oembed.title       || title;
-      author    = oembed.author_name || author;
-      thumbnail = oembed.thumbnail_url || thumbnail;
-    } catch (e) {
-      this._log(`[warn] oEmbed parse failed: ${e.message}`);
-    }
+      const o = JSON.parse(oembedRes.data);
+      title = o.title || title; author = o.author_name || author; thumbnail = o.thumbnail_url || thumbnail;
+    } catch {}
 
     let duration = 0;
-    const durMatch = pageRes.data.match(/"approxDurationMs":"(\d+)"/);
-    if (durMatch) duration = Math.round(parseInt(durMatch[1], 10) / 1000);
+    const dm = pageRes.data.match(/"approxDurationMs":"(\d+)"/);
+    if (dm) duration = Math.round(parseInt(dm[1], 10) / 1000);
 
     this._sendStatus('');
-    this._log(`[info] title="${title}" author="${author}" duration=${duration}s`);
-    this._log(`[info] yt-dlp binary: ${getBinary()}`);
-
     return { id: videoId, title, author, duration, thumbnail };
   }
 
-  /* ── YT-DLP DOWNLOAD ───────────────────────────────────── */
+  async download(url, options) {
+    this._cancelled = false; this._paused = false;
+    const info    = options.videoInfo || await this.getVideoInfo(url);
+    const isAudio = options.format === 'audio';
+    const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
 
-  _ytdlpDownload(url, filepath, format, info, filename) {
+    let ext = 'mp4';
+    if (isAudio)                        ext = 'm4a';
+    else if (options.format === 'mkv')  ext = 'mkv';
+    else if (options.format === 'webm') ext = 'webm';
+
+    const outDir = this.storage.getOutputPath();
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+    let filename = `${safeTitle}.${ext}`, filepath = path.join(outDir, filename), n = 1;
+    while (fs.existsSync(filepath)) { filename = `${safeTitle} (${n}).${ext}`; filepath = path.join(outDir, filename); n++; }
+
+    return this._ytdlpDownload(url, filepath, buildFormat(options.quality, options.format), info, filename, isAudio);
+  }
+
+  _ytdlpDownload(url, filepath, format, info, filename, isAudio) {
     this._sendStatus('Starting download…');
-    this._log(`[yt-dlp] spawning: ${getBinary()}`);
+    this._log(`[yt-dlp] binary: ${getBinary()}`);
     this._log(`[yt-dlp] format: ${format}`);
 
     return new Promise((resolve, reject) => {
       const proc = spawn(getBinary(), [
-        url,
-        '--output', filepath,
-        '--format', format,
-        '--no-warnings',
-        '--no-playlist',
-        '--no-check-certificate',
-        '--newline',
-        '--progress',
-        '--no-color',
-        '--socket-timeout', '10',
+        url, '--output', filepath, '--format', format,
+        '--no-warnings', '--no-playlist', '--no-check-certificate',
+        '--newline', '--progress', '--no-color', '--socket-timeout', '10',
         '--extractor-args', 'youtube:player_client=android',
       ], { env: { ...process.env } });
 
       this._activeProc = proc;
-
-      let totalSize = 0;
-      let stderr    = '';
-      let started   = false;
+      let totalSize = 0, stderr = '', started = false, actualFilepath = filepath;
 
       const handleChunk = (chunk) => {
-        const text  = chunk.toString();
-        const lines = text.split(/\r?\n|\r/);
-        for (const line of lines) {
+        for (const line of chunk.toString().split(/\r?\n|\r/)) {
           if (!line.trim()) continue;
           this._log(line);
-          if (!started && /\[download\]/.test(line)) {
-            started = true;
-            this._sendStatus('Downloading…');
-          }
+          const dest = line.match(/^\[download\] Destination: (.+)$/);
+          if (dest) actualFilepath = dest[1].trim();
+          if (!started && /\[download\]/.test(line)) { started = true; this._sendStatus('Downloading…'); }
           const m = PROGRESS_RE.exec(line);
           if (!m) continue;
-          const percent     = Math.round(parseFloat(m[1]));
-          totalSize         = parseSize(m[2], m[3]);
-          const currentSize = Math.round((percent / 100) * totalSize);
-          const speedVal    = m[4] ? parseFloat(m[4]) : 0;
-          const speedUnit   = m[5] ? m[5] : '';
-          const speed       = speedVal && speedUnit ? `${speedVal} ${speedUnit}/s` : '';
-          this._sendProgress({ percent, totalSize, currentSize, speed });
+          const percent = Math.round(parseFloat(m[1]));
+          totalSize = parseSize(m[2], m[3]);
+          this._sendProgress({
+            percent, totalSize, currentSize: Math.round((percent / 100) * totalSize),
+            speed: m[4] && m[5] ? `${m[4]} ${m[5]}/s` : '', eta: m[6] || '',
+          });
         }
       };
 
       proc.stdout.on('data', handleChunk);
-      proc.stderr.on('data', (chunk) => {
-        handleChunk(chunk);
-        stderr += chunk.toString();
-      });
+      proc.stderr.on('data', (c) => { handleChunk(c); stderr += c.toString(); });
 
       proc.on('close', (code) => {
         this._activeProc = null;
-
-        if (this._cancelled) {
-          fs.unlink(filepath, () => {});
-          return reject(new Error('Download cancelled'));
-        }
-
+        if (this._cancelled) { try { fs.unlinkSync(actualFilepath); } catch {} return reject(new Error('Download cancelled')); }
         if (code !== 0) {
-          fs.unlink(filepath, () => {});
-          const lastLine = stderr.split('\n').filter(Boolean).pop() || '';
-          return reject(new Error(lastLine || `Download failed (exit ${code})`));
+          try { fs.unlinkSync(actualFilepath); } catch {}
+          return reject(new Error(stderr.split('\n').filter(Boolean).pop() || `Download failed (exit ${code})`));
         }
-
         this._sendStatus('Download complete!');
-
+        const actualFilename = path.basename(actualFilepath);
         let fileSize = totalSize;
-        try { fileSize = fs.statSync(filepath).size; } catch {}
-
+        try { fileSize = fs.statSync(actualFilepath).size; } catch {}
         this.storage.addVideo({
-          filename,
-          title:     info.title,
-          duration:  info.duration,
-          size:      fileSize,
-          thumbnail: info.thumbnail,
-          url,
-          dateAdded: new Date().toISOString(),
+          filename: actualFilename, title: info.title, duration: info.duration,
+          size: fileSize, thumbnail: info.thumbnail, url,
+          type: isAudio ? 'audio' : 'video', dateAdded: new Date().toISOString(),
         });
-
-        resolve({ success: true, filename, filepath, size: fileSize, url });
+        resolve({ success: true, filename: actualFilename, filepath: actualFilepath, size: fileSize, url, type: isAudio ? 'audio' : 'video' });
       });
 
       proc.on('error', (err) => {
         this._activeProc = null;
-        fs.unlink(filepath, () => {});
+        try { fs.unlinkSync(actualFilepath); } catch {}
         reject(new Error(`Failed to start yt-dlp: ${err.message}`));
       });
     });
   }
 
-  /* ── DOWNLOAD ──────────────────────────────────────────── */
-
-  async download(url, options) {
-    this._cancelled = false;
-    const info = options.videoInfo || await this.getVideoInfo(url);
-    const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
-    const ext       = options.format === 'webm' ? 'webm' : 'mp4';
-    const outDir    = this.storage.getOutputPath();
-
-    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-
-    let filename = `${safeTitle}.${ext}`;
-    let filepath = path.join(outDir, filename);
-    let counter  = 1;
-    while (fs.existsSync(filepath)) {
-      filename = `${safeTitle} (${counter}).${ext}`;
-      filepath = path.join(outDir, filename);
-      counter++;
-    }
-
-    const format = buildFormat(options.quality);
-    return this._ytdlpDownload(url, filepath, format, info, filename);
-  }
-
-  /* ── CANCEL ────────────────────────────────────────────── */
-
-  cancel() {
+  cancel()  {
     this._cancelled = true;
-    if (this._activeProc) {
-      this._log('[cancel] killing yt-dlp process');
-      this._activeProc.kill('SIGTERM');
-      this._activeProc = null;
-    }
+    if (this._activeProc) { this._activeProc.kill('SIGTERM'); this._activeProc = null; }
+  }
+  pause()   {
+    if (this._activeProc && !this._paused) { this._activeProc.kill('SIGSTOP'); this._paused = true; this._sendStatus('Paused'); }
+  }
+  resume()  {
+    if (this._activeProc && this._paused)  { this._activeProc.kill('SIGCONT'); this._paused = false; this._sendStatus('Downloading…'); }
   }
 }
 
