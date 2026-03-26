@@ -60,7 +60,7 @@ function parseSize(num, unit) {
 const VALID_HEIGHTS = new Set([360, 480, 720, 1080, 1440, 2160]);
 
 function buildFormat(quality, format) {
-  if (format === 'audio') return 'bestaudio[ext=m4a]/bestaudio[ext=opus]/bestaudio';
+  if (format === 'audio') return 'bestaudio/best';
   if (format === 'mkv') {
     if (!quality || quality === 'best') return 'bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best';
     const h = parseInt(quality, 10);
@@ -138,11 +138,15 @@ class DownloadManager {
     this._log(`[yt-dlp] format: ${format}`);
 
     return new Promise((resolve, reject) => {
+      const extractorArgs = isAudio
+        ? 'youtube:player_client=web'       // web client exposes audio streams
+        : 'youtube:player_client=android';  // android is faster for video
+
       const proc = spawn(getBinary(), [
         url, '--output', filepath, '--format', format,
         '--no-warnings', '--no-playlist', '--no-check-certificate',
         '--newline', '--progress', '--no-color', '--socket-timeout', '10',
-        '--extractor-args', 'youtube:player_client=android',
+        '--extractor-args', extractorArgs,
       ], { env: { ...process.env } });
 
       this._activeProc = proc;

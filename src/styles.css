@@ -96,6 +96,7 @@ a      { text-decoration: none; }
 }
 .tb-btn:hover { background: var(--surface2); color: var(--text1); }
 .tb-btn.close:hover { background: var(--red); color: #fff; }
+.tb-btn svg { width: 10px; height: 10px; display: block; flex-shrink: 0; }
 
 /* ── SIDEBAR ── */
 .sidebar {

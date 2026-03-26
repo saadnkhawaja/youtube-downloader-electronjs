@@ -41,6 +41,18 @@ const createWindow = () => {
     },
   });
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+
+  // Open DevTools with Cmd+Option+I (macOS) or F12
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if ((input.meta && input.alt && input.key === 'i') ||
+        (input.control && input.shift && input.key === 'i') ||
+        input.key === 'F12') {
+      mainWindow.webContents.isDevToolsOpened()
+        ? mainWindow.webContents.closeDevTools()
+        : mainWindow.webContents.openDevTools();
+    }
+  });
+
   if (process.argv.includes('--dev')) mainWindow.webContents.openDevTools();
 };
 
