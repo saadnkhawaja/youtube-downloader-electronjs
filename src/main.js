@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { execSync } = require('child_process');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -8,6 +9,41 @@ const Storage = require('./storage');
 let mainWindow;
 let downloadManager;
 let storage;
+
+const ROOT = path.join(__dirname, '..');
+
+/* ── Auto-setup fast yt-dlp (pip in venv) if Python is available ── */
+
+function ensureFastYtdlp() {
+  const venvBin = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
+  if (fs.existsSync(venvBin)) return; // already set up
+
+  // Find Python 3.8+
+  const pythonCmd = ['python3', 'python'].find((cmd) => {
+    try {
+      const ver = execSync(`${cmd} --version 2>&1`, { encoding: 'utf8' });
+      const m = ver.match(/(\d+)\.(\d+)/);
+      return m && parseInt(m[1], 10) >= 3 && parseInt(m[2], 10) >= 8;
+    } catch { return false; }
+  });
+
+  if (!pythonCmd) {
+    console.log('[snapy-yt] Python 3.8+ not found, using standalone yt-dlp binary.');
+    return;
+  }
+
+  try {
+    console.log('[snapy-yt] Setting up fast yt-dlp via pip…');
+    const venvDir = path.join(ROOT, '.venv');
+    execSync(`${pythonCmd} -m venv "${venvDir}"`, { stdio: 'inherit' });
+    execSync(`"${path.join(venvDir, 'bin', 'pip')}" install --quiet yt-dlp`, { stdio: 'inherit' });
+    console.log('[snapy-yt] yt-dlp installed via pip (fast mode).');
+  } catch (e) {
+    console.warn('[snapy-yt] Failed to setup pip yt-dlp:', e.message);
+  }
+}
+
+/* ── Window ── */
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -32,6 +68,9 @@ const createWindow = () => {
 };
 
 app.on('ready', () => {
+  // Auto-setup fast yt-dlp before anything else
+  ensureFastYtdlp();
+
   const docsPath = path.join(os.homedir(), 'Documents', 'snapy-yt');
   if (!fs.existsSync(docsPath)) fs.mkdirSync(docsPath, { recursive: true });
 

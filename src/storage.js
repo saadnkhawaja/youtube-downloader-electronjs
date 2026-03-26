@@ -15,7 +15,7 @@ class Storage {
       this.writeConfig({
         outputPath: this.outputPath,
         format: 'mp4',
-        quality: '18',
+        quality: 'best',
         autoUpdate: true,
       });
     }
@@ -65,7 +65,7 @@ class Storage {
     const config = this.readConfig();
     return {
       format: config.format || 'mp4',
-      quality: config.quality || '18',
+      quality: config.quality || 'best',
       autoUpdate: config.autoUpdate !== false,
     };
   }
