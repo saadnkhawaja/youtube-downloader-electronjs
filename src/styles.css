@@ -331,6 +331,7 @@ a      { text-decoration: none; }
 .opt-row { display: flex; align-items: center; gap: 12px; }
 .opt-label { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.6px; min-width: 46px; }
 .opt-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pills-status { font-size: 11px; color: var(--text3); padding: 6px 0; }
 
 .pill {
   padding: 5px 12px;
@@ -361,7 +362,8 @@ a      { text-decoration: none; }
   display: flex; align-items: center; gap: 6px;
   transition: all var(--transition);
 }
-.btn-queue:hover { border-color: var(--text2); background: var(--surface3); }
+.btn-queue:hover:not(:disabled) { border-color: var(--text2); background: var(--surface3); }
+.btn-queue:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .btn-download {
   padding: 10px 24px;

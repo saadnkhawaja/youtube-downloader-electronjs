@@ -19,10 +19,28 @@ const PLATFORM_ASSET = {
   win32:  'yt-dlp.exe',
 };
 
+function getVenvBinDir() {
+  return path.join(VENV_DIR, process.platform === 'win32' ? 'Scripts' : 'bin');
+}
+
+function getPipPath() {
+  return path.join(getVenvBinDir(), process.platform === 'win32' ? 'pip.exe' : 'pip');
+}
+
+function getVenvYtdlpPath() {
+  return path.join(getVenvBinDir(), process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+}
+
+function getPythonCandidates() {
+  return process.platform === 'win32'
+    ? ['python', 'py -3.10', 'py -3', 'python3']
+    : ['python3', 'python'];
+}
+
 /* ── helpers ──────────────────────────────── */
 
 function hasPython() {
-  for (const cmd of ['python3', 'python']) {
+  for (const cmd of getPythonCandidates()) {
     try {
       const ver = execSync(`${cmd} --version 2>&1`, { encoding: 'utf8' }).trim();
       const m = ver.match(/(\d+)\.(\d+)/);
@@ -38,11 +56,11 @@ function setupVenv(pythonCmd) {
   console.log(`Creating venv with ${pythonCmd}…`);
   execSync(`${pythonCmd} -m venv "${VENV_DIR}"`, { stdio: 'inherit' });
 
-  const pip = path.join(VENV_DIR, 'bin', 'pip');
+  const pip = getPipPath();
   console.log('Installing yt-dlp in venv…');
   execSync(`"${pip}" install --quiet yt-dlp`, { stdio: 'inherit' });
 
-  const ytdlp = path.join(VENV_DIR, 'bin', 'yt-dlp');
+  const ytdlp = getVenvYtdlpPath();
   if (!fs.existsSync(ytdlp)) throw new Error('yt-dlp not found after pip install');
 
   fs.mkdirSync(BIN_DIR, { recursive: true });

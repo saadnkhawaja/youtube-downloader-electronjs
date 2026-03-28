@@ -3,7 +3,7 @@ const fs    = require('fs');
 const path  = require('path');
 
 const BIN_DIR  = path.join(__dirname, '..', 'bin');
-const BIN_PATH = path.join(BIN_DIR, 'yt-dlp');
+const BIN_PATH = path.join(BIN_DIR, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 
 const PLATFORM_ASSET = {
   darwin: 'yt-dlp_macos',

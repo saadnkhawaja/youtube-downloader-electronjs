@@ -1,29 +1,59 @@
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const https = require('https');
 const http  = require('http');
 const fs    = require('fs');
+const os    = require('os');
 const path  = require('path');
 
 /* ── Resolve yt-dlp: venv → system → standalone ── */
 const ROOT   = path.join(__dirname, '..');
 const MARKER = path.join(ROOT, 'bin', '.ytdlp-method');
 
+function getVenvBinDir() {
+  return path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin');
+}
+
+function getVenvYtdlpPath() {
+  return path.join(getVenvBinDir(), process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+}
+
+function getBundledYtdlpPath() {
+  return path.join(ROOT, 'bin', process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+}
+
+function findSystemYtdlp() {
+  try {
+    const cmd = process.platform === 'win32' ? 'where' : 'which';
+    const output = execFileSync(cmd, ['yt-dlp'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && fs.existsSync(line)) || null;
+  } catch {
+    return null;
+  }
+}
+
 function resolveYtdlp() {
   try {
     const m = fs.readFileSync(MARKER, 'utf8').trim();
     if (m === 'venv') {
-      const b = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
+      const b = getVenvYtdlpPath();
+      if (fs.existsSync(b)) return b;
+    }
+    if (m === 'binary') {
+      const b = getBundledYtdlpPath();
       if (fs.existsSync(b)) return b;
     }
   } catch {}
-  const venv = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
+  const venv = getVenvYtdlpPath();
   if (fs.existsSync(venv)) return venv;
-  try {
-    const { execSync } = require('child_process');
-    const sys = execSync('which yt-dlp 2>/dev/null', { encoding: 'utf8' }).trim();
-    if (sys && fs.existsSync(sys)) return sys;
-  } catch {}
-  return path.join(ROOT, 'bin', 'yt-dlp');
+  const sys = findSystemYtdlp();
+  if (sys) return sys;
+  return getBundledYtdlpPath();
 }
 
 let _binary = null;
@@ -57,20 +87,195 @@ function parseSize(num, unit) {
   return Math.round(n * (map[unit] || 1));
 }
 
-const VALID_HEIGHTS = new Set([360, 480, 720, 1080, 1440, 2160]);
+function toNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
 
-function buildFormat(quality, format) {
-  if (format === 'audio') return 'bestaudio/best';
-  if (format === 'mkv') {
-    if (!quality || quality === 'best') return 'bestvideo[ext=webm]+bestaudio[ext=webm]/bestvideo+bestaudio/best';
-    const h = parseInt(quality, 10);
-    if (!VALID_HEIGHTS.has(h)) return 'bestvideo+bestaudio/best';
-    return `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`;
+function uniqueDescending(values) {
+  return [...new Set(values.filter((value) => Number.isFinite(value) && value > 0))]
+    .sort((a, b) => b - a);
+}
+
+function normalizeFormat(format) {
+  if (!format || !format.format_id) return null;
+
+  const hasVideo = !!format.vcodec && format.vcodec !== 'none';
+  const hasAudio = !!format.acodec && format.acodec !== 'none';
+  if (!hasVideo && !hasAudio) return null;
+
+  return {
+    formatId: String(format.format_id),
+    ext: format.ext || '',
+    height: toNumber(format.height),
+    width: toNumber(format.width),
+    fps: toNumber(format.fps),
+    tbr: toNumber(format.tbr),
+    vcodec: format.vcodec || 'none',
+    acodec: format.acodec || 'none',
+    formatNote: format.format_note || '',
+    dynamicRange: format.dynamic_range || '',
+    hasVideo,
+    hasAudio,
+    filesize: toNumber(format.filesize) || toNumber(format.filesize_approx),
+  };
+}
+
+function isVideoFormatForContainer(format, container) {
+  if (!format?.hasVideo || !format.height) return false;
+  if (container === 'mkv') return true;
+  return format.ext === container;
+}
+
+function getAvailableQualities(formats, container) {
+  const heights = formats
+    .filter((format) => isVideoFormatForContainer(format, container))
+    .map((format) => format.height);
+  return ['best', ...uniqueDescending(heights).map(String)];
+}
+
+function buildQualityMap(formats) {
+  return {
+    mp4: getAvailableQualities(formats, 'mp4'),
+    webm: getAvailableQualities(formats, 'webm'),
+    mkv: getAvailableQualities(formats, 'mkv'),
+  };
+}
+
+function pickBestCandidate(candidates, scoreFn) {
+  let best = null;
+  let bestScore = null;
+  for (const candidate of candidates) {
+    const score = scoreFn(candidate);
+    if (!bestScore) {
+      best = candidate;
+      bestScore = score;
+      continue;
+    }
+    let isBetter = false;
+    for (let i = 0; i < score.length; i++) {
+      if ((score[i] || 0) === (bestScore[i] || 0)) continue;
+      isBetter = (score[i] || 0) > (bestScore[i] || 0);
+      break;
+    }
+    if (isBetter) {
+      best = candidate;
+      bestScore = score;
+    }
   }
-  if (!quality || quality === 'best') return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
-  const h = parseInt(quality, 10);
-  if (!VALID_HEIGHTS.has(h)) return 'best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best';
-  return `best[height<=${h}][ext=mp4]/bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}]/best`;
+  return best;
+}
+
+function selectTargetHeight(candidates, quality) {
+  const targetHeight = parseInt(quality, 10);
+  if (!Number.isFinite(targetHeight)) return null;
+
+  const heights = uniqueDescending(candidates.map((candidate) => candidate.height));
+  if (!heights.length) return null;
+  if (heights.includes(targetHeight)) return targetHeight;
+
+  const lower = heights.find((height) => height < targetHeight);
+  if (lower) return lower;
+
+  return heights[heights.length - 1];
+}
+
+function scoreVideoFormat(format) {
+  return [
+    format.height || 0,
+    format.fps || 0,
+    format.hasAudio ? 0 : 1,
+    format.tbr || 0,
+    format.dynamicRange === 'HDR' ? 1 : 0,
+  ];
+}
+
+function selectVideoFormat(formats, quality, container) {
+  const candidates = formats.filter((format) => isVideoFormatForContainer(format, container));
+  if (!candidates.length) return null;
+
+  const targetHeight = quality && quality !== 'best'
+    ? selectTargetHeight(candidates, quality)
+    : null;
+
+  const pool = targetHeight
+    ? candidates.filter((candidate) => candidate.height === targetHeight)
+    : candidates;
+
+  return pickBestCandidate(pool, scoreVideoFormat);
+}
+
+function scoreAudioFormat(format, container) {
+  const containerScore = container === 'webm'
+    ? (format.ext === 'webm' ? 2 : 0)
+    : (format.ext === 'm4a' || format.ext === 'mp4' ? 2 : 0);
+
+  return [
+    containerScore,
+    format.tbr || 0,
+  ];
+}
+
+function selectAudioFormat(formats, container) {
+  const candidates = formats.filter((format) => !format.hasVideo && format.hasAudio);
+  if (!candidates.length) return null;
+  return pickBestCandidate(candidates, (format) => scoreAudioFormat(format, container));
+}
+
+function normalizeFetchedInfo(info) {
+  const formats = Array.isArray(info.formats)
+    ? info.formats.map(normalizeFormat).filter(Boolean)
+    : [];
+  const thumbnail = info.thumbnail
+    || info.thumbnails?.slice().sort((a, b) => (b?.height || 0) - (a?.height || 0))[0]?.url
+    || '';
+
+  return {
+    id: info.id,
+    cacheKey: info.id || info.webpage_url || '',
+    title: info.title || 'Unknown Title',
+    author: info.uploader || info.channel || info.creator || 'Unknown',
+    duration: toNumber(info.duration) || 0,
+    thumbnail,
+    formats,
+    qualitiesByFormat: buildQualityMap(formats),
+    formatsLoaded: true,
+  };
+}
+
+function buildDownloadPlan(formats, quality, container) {
+  if (container === 'audio') {
+    const audio = selectAudioFormat(formats, 'mp4') || selectAudioFormat(formats, 'webm');
+    if (!audio) return null;
+    return {
+      formatSelector: audio.formatId,
+      mergeOutputFormat: null,
+      remuxVideo: null,
+      outputExt: audio.ext || 'm4a',
+    };
+  }
+
+  const video = selectVideoFormat(formats, quality, container);
+  if (!video) return null;
+
+  if (video.hasAudio) {
+    return {
+      formatSelector: video.formatId,
+      mergeOutputFormat: container,
+      remuxVideo: container === 'mkv' ? 'mkv' : null,
+      outputExt: container,
+    };
+  }
+
+  const audio = selectAudioFormat(formats, container) || selectAudioFormat(formats, 'mp4') || selectAudioFormat(formats, 'webm');
+  if (!audio) return null;
+
+  return {
+    formatSelector: `${video.formatId}+${audio.formatId}`,
+    mergeOutputFormat: container,
+    remuxVideo: container === 'mkv' ? 'mkv' : null,
+    outputExt: container,
+  };
 }
 
 class DownloadManager {
@@ -81,11 +286,79 @@ class DownloadManager {
     this._activeProc = null;
     this._cancelled  = false;
     this._paused     = false;
+    this._infoCache  = new Map();
+    this._infoLoads  = new Map();
   }
 
   _log(l)             { try { this.mainWindow.webContents.send('ytdlp-log', l); } catch {} }
   _sendStatus(s)      { try { this.mainWindow.webContents.send('download-status', s); } catch {} }
   _sendProgress(d)    { try { this.mainWindow.webContents.send('download-progress', d); } catch {} }
+
+  _cacheKeyFor(url, info = null) {
+    return info?.cacheKey || info?.id || extractVideoId(url) || url;
+  }
+
+  async _loadYtdlpInfo(url) {
+    return new Promise((resolve, reject) => {
+      const proc = spawn(getBinary(), [
+        '--ignore-config',
+        '--dump-single-json',
+        '--skip-download',
+        '--no-warnings',
+        '--no-playlist',
+        '--no-check-certificate',
+        '--socket-timeout', '10',
+        url,
+      ], { env: { ...process.env } });
+
+      let stdout = '';
+      let stderr = '';
+
+      proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+      proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          const message = stderr.split('\n').map((line) => line.trim()).filter(Boolean).pop();
+          return reject(new Error(message || `Failed to fetch video formats (exit ${code})`));
+        }
+
+        try {
+          resolve(JSON.parse(stdout));
+        } catch {
+          reject(new Error('Failed to parse available video formats.'));
+        }
+      });
+
+      proc.on('error', (err) => {
+        reject(new Error(`Failed to start yt-dlp: ${err.message}`));
+      });
+    });
+  }
+
+  async getVideoFormats(url) {
+    const videoId = extractVideoId(url);
+    if (!videoId) throw new Error('Could not extract video ID from URL');
+
+    const cached = this._infoCache.get(videoId);
+    if (cached?.normalized) return cached.normalized;
+    if (this._infoLoads.has(videoId)) return this._infoLoads.get(videoId);
+
+    const loader = this._loadYtdlpInfo(url)
+      .then((rawInfo) => {
+        const normalized = normalizeFetchedInfo(rawInfo);
+        const key = this._cacheKeyFor(url, normalized);
+        this._infoCache.set(key, { rawInfo, normalized });
+        if (key !== videoId) this._infoCache.set(videoId, { rawInfo, normalized });
+        return normalized;
+      })
+      .finally(() => {
+        this._infoLoads.delete(videoId);
+      });
+
+    this._infoLoads.set(videoId, loader);
+    return loader;
+  }
 
   async getVideoInfo(url) {
     const videoId = extractVideoId(url);
@@ -114,14 +387,31 @@ class DownloadManager {
 
   async download(url, options) {
     this._cancelled = false; this._paused = false;
-    const info    = options.videoInfo || await this.getVideoInfo(url);
-    const isAudio = options.format === 'audio';
-    const safeTitle = info.title.replace(/[/\\?%*:|"<>]/g, '-').trim();
+    let info = options.videoInfo || await this.getVideoInfo(url);
+    const detailedInfo = await this.getVideoFormats(url);
+    info = {
+      ...detailedInfo,
+      ...info,
+      title: info?.title || detailedInfo.title,
+      author: info?.author || detailedInfo.author,
+      duration: info?.duration || detailedInfo.duration,
+      thumbnail: info?.thumbnail || detailedInfo.thumbnail,
+      formats: detailedInfo.formats,
+      qualitiesByFormat: detailedInfo.qualitiesByFormat,
+      formatsLoaded: true,
+    };
 
-    let ext = 'mp4';
-    if (isAudio)                        ext = 'm4a';
-    else if (options.format === 'mkv')  ext = 'mkv';
-    else if (options.format === 'webm') ext = 'webm';
+    const plan = buildDownloadPlan(info.formats || [], options.quality, options.format);
+    if (!plan) {
+      throw new Error('No compatible download format was found for the selected quality.');
+    }
+
+    const isAudio = options.format === 'audio';
+    const safeTitle = (info.title || 'Unknown Title').replace(/[/\\?%*:|"<>]/g, '-').trim() || 'video';
+
+    let ext = plan.outputExt || 'mp4';
+    if (!isAudio && options.format === 'mkv')  ext = 'mkv';
+    if (!isAudio && options.format === 'webm') ext = 'webm';
 
     const outDir = this.storage.getOutputPath();
     if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
@@ -129,25 +419,47 @@ class DownloadManager {
     let filename = `${safeTitle}.${ext}`, filepath = path.join(outDir, filename), n = 1;
     while (fs.existsSync(filepath)) { filename = `${safeTitle} (${n}).${ext}`; filepath = path.join(outDir, filename); n++; }
 
-    return this._ytdlpDownload(url, filepath, buildFormat(options.quality, options.format), info, filename, isAudio);
+    const cacheKey = this._cacheKeyFor(url, info);
+    const cached = this._infoCache.get(cacheKey) || this._infoCache.get(extractVideoId(url));
+
+    return this._ytdlpDownload(url, filepath, plan, info, filename, isAudio, cached?.rawInfo || null);
   }
 
-  _ytdlpDownload(url, filepath, format, info, filename, isAudio) {
+  _writeInfoJson(rawInfo, cacheKey) {
+    const tempDir = path.join(os.tmpdir(), 'snapy-yt');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    const safeKey = (cacheKey || 'video').replace(/[^a-zA-Z0-9._-]/g, '_');
+    const jsonPath = path.join(tempDir, `${safeKey}-${Date.now()}.info.json`);
+    fs.writeFileSync(jsonPath, JSON.stringify(rawInfo), 'utf8');
+    return jsonPath;
+  }
+
+  _ytdlpDownload(url, filepath, plan, info, filename, isAudio, rawInfo) {
     this._sendStatus('Starting download…');
     this._log(`[yt-dlp] binary: ${getBinary()}`);
-    this._log(`[yt-dlp] format: ${format}`);
+    this._log(`[yt-dlp] format: ${plan.formatSelector}`);
 
     return new Promise((resolve, reject) => {
-      const extractorArgs = isAudio
-        ? 'youtube:player_client=web'       // web client exposes audio streams
-        : 'youtube:player_client=android';  // android is faster for video
-
-      const proc = spawn(getBinary(), [
-        url, '--output', filepath, '--format', format,
+      const cacheKey = this._cacheKeyFor(url, info);
+      const infoJsonPath = rawInfo ? this._writeInfoJson(rawInfo, cacheKey) : null;
+      const args = [
+        '--ignore-config',
+        '--output', filepath,
+        '--format', plan.formatSelector,
         '--no-warnings', '--no-playlist', '--no-check-certificate',
         '--newline', '--progress', '--no-color', '--socket-timeout', '10',
-        '--extractor-args', extractorArgs,
-      ], { env: { ...process.env } });
+      ];
+
+      if (plan.mergeOutputFormat) args.push('--merge-output-format', plan.mergeOutputFormat);
+      if (plan.remuxVideo) args.push('--remux-video', plan.remuxVideo);
+
+      if (infoJsonPath) {
+        args.push('--load-info-json', infoJsonPath);
+      } else {
+        args.push(url);
+      }
+
+      const proc = spawn(getBinary(), args, { env: { ...process.env } });
 
       this._activeProc = proc;
       let totalSize = 0, stderr = '', started = false, actualFilepath = filepath;
@@ -156,8 +468,12 @@ class DownloadManager {
         for (const line of chunk.toString().split(/\r?\n|\r/)) {
           if (!line.trim()) continue;
           this._log(line);
-          const dest = line.match(/^\[download\] Destination: (.+)$/);
-          if (dest) actualFilepath = dest[1].trim();
+          const dest = line.match(/^\[(?:download|ExtractAudio)\] Destination: (.+)$/);
+          if (dest) actualFilepath = dest[1].trim().replace(/^"|"$/g, '');
+          const merged = line.match(/^\[Merger\] Merging formats into "?(.+?)"?$/);
+          if (merged) actualFilepath = merged[1].trim();
+          const remuxed = line.match(/^\[VideoRemuxer\] Remuxing video from ".+" to "(.+)"$/);
+          if (remuxed) actualFilepath = remuxed[1].trim();
           if (!started && /\[download\]/.test(line)) { started = true; this._sendStatus('Downloading…'); }
           const m = PROGRESS_RE.exec(line);
           if (!m) continue;
@@ -175,6 +491,7 @@ class DownloadManager {
 
       proc.on('close', (code) => {
         this._activeProc = null;
+        if (infoJsonPath) { try { fs.unlinkSync(infoJsonPath); } catch {} }
         if (this._cancelled) { try { fs.unlinkSync(actualFilepath); } catch {} return reject(new Error('Download cancelled')); }
         if (code !== 0) {
           try { fs.unlinkSync(actualFilepath); } catch {}
@@ -194,6 +511,7 @@ class DownloadManager {
 
       proc.on('error', (err) => {
         this._activeProc = null;
+        if (infoJsonPath) { try { fs.unlinkSync(infoJsonPath); } catch {} }
         try { fs.unlinkSync(actualFilepath); } catch {}
         reject(new Error(`Failed to start yt-dlp: ${err.message}`));
       });

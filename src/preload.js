@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pauseDownload:     ()           => ipcRenderer.invoke('pause-download'),
   resumeDownload:    ()           => ipcRenderer.invoke('resume-download'),
   getVideoInfo:      (url)        => ipcRenderer.invoke('get-video-info', url),
+  getVideoFormats:   (url)        => ipcRenderer.invoke('get-video-formats', url),
   onDownloadProgress:(cb)         => ipcRenderer.on('download-progress', (_, data) => cb(data)),
   onDownloadStatus:  (cb)         => ipcRenderer.on('download-status', (_, status) => cb(status)),
   onYtdlpLog:        (cb)         => ipcRenderer.on('ytdlp-log', (_, line) => cb(line)),

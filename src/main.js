@@ -9,11 +9,29 @@ const Storage = require('./storage');
 let mainWindow, downloadManager, storage;
 const ROOT = path.join(__dirname, '..');
 
+function getVenvBinDir() {
+  return path.join(ROOT, '.venv', process.platform === 'win32' ? 'Scripts' : 'bin');
+}
+
+function getVenvYtdlpPath() {
+  return path.join(getVenvBinDir(), process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+}
+
+function getVenvPipPath() {
+  return path.join(getVenvBinDir(), process.platform === 'win32' ? 'pip.exe' : 'pip');
+}
+
+function getPythonCandidates() {
+  return process.platform === 'win32'
+    ? ['python', 'py -3.10', 'py -3', 'python3']
+    : ['python3', 'python'];
+}
+
 /* ── Auto-setup fast yt-dlp (pip venv) ── */
 function ensureFastYtdlp() {
-  const venvBin = path.join(ROOT, '.venv', 'bin', 'yt-dlp');
+  const venvBin = getVenvYtdlpPath();
   if (fs.existsSync(venvBin)) return;
-  const pythonCmd = ['python3', 'python'].find((cmd) => {
+  const pythonCmd = getPythonCandidates().find((cmd) => {
     try {
       const v = execSync(`${cmd} --version 2>&1`, { encoding: 'utf8' });
       const m = v.match(/(\d+)\.(\d+)/);
@@ -25,7 +43,7 @@ function ensureFastYtdlp() {
     console.log('[snapy-yt] Setting up fast yt-dlp…');
     const venvDir = path.join(ROOT, '.venv');
     execSync(`${pythonCmd} -m venv "${venvDir}"`, { stdio: 'inherit' });
-    execSync(`"${path.join(venvDir, 'bin', 'pip')}" install --quiet yt-dlp`, { stdio: 'inherit' });
+    execSync(`"${getVenvPipPath()}" install --quiet yt-dlp`, { stdio: 'inherit' });
   } catch (e) { console.warn('[snapy-yt] pip setup failed:', e.message); }
 }
 
@@ -106,3 +124,4 @@ ipcMain.handle('cancel-download',  async ()        => downloadManager.cancel());
 ipcMain.handle('pause-download',   async ()        => downloadManager.pause());
 ipcMain.handle('resume-download',  async ()        => downloadManager.resume());
 ipcMain.handle('get-video-info',   async (_, url)  => downloadManager.getVideoInfo(url));
+ipcMain.handle('get-video-formats', async (_, url) => downloadManager.getVideoFormats(url));

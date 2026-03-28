@@ -9,6 +9,7 @@ class SnapyYT {
     this.currentInfo     = null;
     this.selectedQuality = 'best';
     this.selectedFormat  = 'mp4';
+    this._fetchToken     = 0;
 
     // Auto Start settings
     this.autoStart        = false;
@@ -117,13 +118,12 @@ class SnapyYT {
       if (p) { this.outputDir = p; this.setOutputPathLabel(p); }
     });
 
-    // Quality pills
-    document.querySelectorAll('#qualityPills .pill').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('#qualityPills .pill').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.selectedQuality = btn.dataset.quality;
-      });
+    document.getElementById('qualityPills').addEventListener('click', (event) => {
+      const btn = event.target.closest('.pill[data-quality]');
+      if (!btn) return;
+      document.querySelectorAll('#qualityPills .pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      this.selectedQuality = btn.dataset.quality;
     });
 
     // Format pills — hide quality when audio selected
@@ -132,8 +132,7 @@ class SnapyYT {
         document.querySelectorAll('#formatPills .pill').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.selectedFormat = btn.dataset.format;
-        document.getElementById('qualityPills').closest('.opt-row').style.display =
-          this.selectedFormat === 'audio' ? 'none' : '';
+        this.refreshQualityPills(this.selectedQuality);
       });
     });
   }
@@ -179,32 +178,64 @@ class SnapyYT {
   async fetchInfo(silent = false) {
     const raw = document.getElementById('urlInput').value.trim();
     if (!raw) { if (!silent) this.toast('Paste a YouTube URL first.', 'error'); return; }
+    const fetchToken = ++this._fetchToken;
 
     const btn = document.getElementById('fetchBtn');
     btn.querySelector('span').textContent = 'Fetching…';
     btn.disabled = true;
 
+    this.currentUrl = '';
+    this.currentInfo = null;
+
     // Hide previous result
     document.getElementById('videoCard').classList.add('hidden');
     document.getElementById('fetchProgress').classList.remove('hidden');
     document.getElementById('fetchProgressLabel').textContent = 'Fetching video information…';
+    this.updateDownloadActionState(false);
 
-    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out. Check your connection.')), 14000));
+    const infoTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out. Check your connection.')), 14000));
+    const formatsTimeout = new Promise((_, rej) => setTimeout(() => rej(new Error('Loading available qualities took too long. Please try again.')), 20000));
     try {
-      const info = await Promise.race([window.electronAPI.getVideoInfo(raw), timeout]);
-      this.currentUrl  = raw;
-      this.currentInfo = info;
+      const quickInfoPromise = window.electronAPI.getVideoInfo(raw);
+      const detailedInfoPromise = window.electronAPI.getVideoFormats(raw);
+      const quickInfo = await Promise.race([quickInfoPromise, infoTimeout]);
+      if (fetchToken !== this._fetchToken) return;
+
+      this.currentUrl = raw;
+      this.currentInfo = { ...quickInfo, formatsLoaded: false, formats: [], qualitiesByFormat: null };
+
+      if (!this.autoStart) {
+        this.showVideoCard(this.currentInfo);
+        this.setQualityPillsMessage('Loading available qualities…');
+      }
+
+      const detailedInfo = await Promise.race([detailedInfoPromise, formatsTimeout]);
+      if (fetchToken !== this._fetchToken) return;
+
+      this.currentInfo = {
+        ...quickInfo,
+        ...detailedInfo,
+        title: detailedInfo.title || quickInfo.title,
+        author: detailedInfo.author || quickInfo.author,
+        duration: detailedInfo.duration || quickInfo.duration,
+        thumbnail: detailedInfo.thumbnail || quickInfo.thumbnail,
+        formatsLoaded: true,
+      };
 
       // Auto Start: skip video card, directly download with auto-start settings
       if (this.autoStart) {
+        const autoFormat = this.autoStartFormat || 'mp4';
+        const autoQuality = autoFormat === 'audio'
+          ? 'best'
+          : this.resolvePreferredQuality(this.autoStartQuality, this.getAvailableQualitiesForFormat(this.currentInfo, autoFormat));
         const item = {
           id:      ++this._dlIdCounter,
           url:     this.currentUrl,
-          info:    { ...info },
-          quality: this.autoStartQuality,
-          format:  this.autoStartFormat,
-          title:   info.title || 'Unknown',
-          thumb:   info.thumbnail || '',
+          info:    { ...this.currentInfo },
+          quality: autoQuality,
+          format:  autoFormat,
+          title:   this.currentInfo.title || 'Unknown',
+          thumb:   this.currentInfo.thumbnail || '',
         };
         // Clear input so same URL isn't re-triggered by clipboard monitor
         document.getElementById('urlInput').value = '';
@@ -221,13 +252,20 @@ class SnapyYT {
         return;
       }
 
-      this.showVideoCard(info);
+      this.showVideoCard(this.currentInfo);
+      this.refreshQualityPills(this.selectedQuality);
     } catch (err) {
+      if (fetchToken !== this._fetchToken) return;
+      if (this.currentInfo && !this.currentInfo.formatsLoaded) {
+        this.setQualityPillsMessage('Could not load available qualities');
+      }
       this.toast(err.message || 'Failed to fetch video info.', 'error');
     } finally {
-      document.getElementById('fetchProgress').classList.add('hidden');
-      btn.querySelector('span').textContent = 'Snapy!';
-      btn.disabled = false;
+      if (fetchToken === this._fetchToken) {
+        document.getElementById('fetchProgress').classList.add('hidden');
+        btn.querySelector('span').textContent = 'Snapy!';
+        btn.disabled = false;
+      }
     }
   }
 
@@ -241,9 +279,78 @@ class SnapyYT {
     setTimeout(() => document.getElementById('videoCard').classList.remove('fadein'), 300);
   }
 
+  updateDownloadActionState(enabled = !!(this.currentUrl && this.currentInfo?.formatsLoaded)) {
+    document.getElementById('downloadBtn').disabled = !enabled;
+    document.getElementById('addToQueueBtn').disabled = !enabled;
+  }
+
+  getAvailableQualitiesForFormat(info = this.currentInfo, format = this.selectedFormat) {
+    if (!info?.qualitiesByFormat || format === 'audio') return ['best'];
+    const values = info.qualitiesByFormat[format];
+    return Array.isArray(values) && values.length ? values : ['best'];
+  }
+
+  resolvePreferredQuality(preferredQuality, availableQualities) {
+    if (!Array.isArray(availableQualities) || !availableQualities.length) return 'best';
+    if (!preferredQuality || preferredQuality === 'best') return 'best';
+
+    const target = parseInt(preferredQuality, 10);
+    const numericQualities = availableQualities
+      .map((quality) => parseInt(quality, 10))
+      .filter(Number.isFinite)
+      .sort((a, b) => b - a);
+
+    if (!Number.isFinite(target) || !numericQualities.length) return availableQualities[0] || 'best';
+    if (numericQualities.includes(target)) return String(target);
+
+    const lower = numericQualities.find((quality) => quality < target);
+    if (Number.isFinite(lower)) return String(lower);
+
+    return String(numericQualities[numericQualities.length - 1]);
+  }
+
+  updateQualityRowVisibility() {
+    const qualityRow = document.getElementById('qualityPills').closest('.opt-row');
+    qualityRow.style.display = this.selectedFormat === 'audio' ? 'none' : '';
+  }
+
+  setQualityPillsMessage(message) {
+    document.getElementById('qualityPills').innerHTML = `<span class="pills-status">${message}</span>`;
+    this.updateQualityRowVisibility();
+    this.updateDownloadActionState(false);
+  }
+
+  refreshQualityPills(preferredQuality = this.selectedQuality) {
+    this.updateQualityRowVisibility();
+    if (!this.currentInfo) {
+      this.setQualityPillsMessage('Fetch a video to load available qualities');
+      return;
+    }
+    if (this.selectedFormat === 'audio') {
+      this.selectedQuality = 'best';
+      this.updateDownloadActionState(!!this.currentUrl && !!this.currentInfo?.formatsLoaded);
+      return;
+    }
+
+    if (!this.currentInfo?.formatsLoaded) {
+      this.setQualityPillsMessage('Loading available qualities…');
+      return;
+    }
+
+    const availableQualities = this.getAvailableQualitiesForFormat(this.currentInfo, this.selectedFormat);
+    this.selectedQuality = this.resolvePreferredQuality(preferredQuality, availableQualities);
+    document.getElementById('qualityPills').innerHTML = availableQualities.map((quality) => {
+      const label = quality === 'best' ? 'Best' : `${quality}p`;
+      const active = quality === this.selectedQuality ? ' active' : '';
+      return `<button class="pill${active}" data-quality="${quality}">${label}</button>`;
+    }).join('');
+    this.updateDownloadActionState(!!this.currentUrl && !!this.currentInfo?.formatsLoaded);
+  }
+
   /* ─── Start Download ─── */
   async startDownload() {
     if (!this.currentUrl) { this.toast('Fetch a video first.', 'error'); return; }
+    if (!this.currentInfo?.formatsLoaded) { this.toast('Available qualities are still loading.', 'error'); return; }
     const item = this._makeQueueItem();
     await this.executeDownload(item);
   }
@@ -251,6 +358,7 @@ class SnapyYT {
   /* ─── Queue ─── */
   addCurrentToQueue() {
     if (!this.currentUrl) { this.toast('Fetch a video first.', 'error'); return; }
+    if (!this.currentInfo?.formatsLoaded) { this.toast('Available qualities are still loading.', 'error'); return; }
     const item = this._makeQueueItem();
     this.downloadQueue.push(item);
     this.renderQueueSection();
@@ -260,6 +368,7 @@ class SnapyYT {
     document.getElementById('urlInput').value = '';
     this.currentUrl = '';
     this.currentInfo = null;
+    this.updateDownloadActionState(false);
     // Auto-start if not currently downloading
     if (!this.isDownloading) this.processQueue();
   }
@@ -1008,8 +1117,7 @@ class SnapyYT {
       // Sync download pills
       const dlFmt = document.querySelector(`#formatPills [data-format="${this.selectedFormat}"]`);
       if (dlFmt) { document.querySelectorAll('#formatPills .pill').forEach(b => b.classList.remove('active')); dlFmt.classList.add('active'); }
-      const dlQ = document.querySelector(`#qualityPills [data-quality="${this.selectedQuality}"]`);
-      if (dlQ)  { document.querySelectorAll('#qualityPills .pill').forEach(b => b.classList.remove('active')); dlQ.classList.add('active'); }
+      this.refreshQualityPills(this.selectedQuality);
     } catch {}
   }
 
@@ -1038,8 +1146,7 @@ class SnapyYT {
       // Sync download pills with new defaults
       const dlFmt = document.querySelector(`#formatPills [data-format="${fmt}"]`);
       if (dlFmt) { document.querySelectorAll('#formatPills .pill').forEach(b => b.classList.remove('active')); dlFmt.classList.add('active'); }
-      const dlQ = document.querySelector(`#qualityPills [data-quality="${q}"]`);
-      if (dlQ)  { document.querySelectorAll('#qualityPills .pill').forEach(b => b.classList.remove('active')); dlQ.classList.add('active'); }
+      this.refreshQualityPills(q);
 
       this.toast('Settings saved!', 'success');
     } catch { this.toast('Failed to save settings.', 'error'); }
